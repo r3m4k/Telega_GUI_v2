@@ -27,6 +27,8 @@ class Signals(Enum):
     # Controller → ComPort
     START_MEASURING     = 'StartMeasuring'
     STOP_MEASURING      = 'StopMeasuring'
+    START_CALIBRATION   = 'StartCalibration'
+    START_STATIC_INIT   = 'StartStaticInit'
     INTERRUPT_MEASURING = 'InterruptMeasuring'
 
     # ComPort → Controller

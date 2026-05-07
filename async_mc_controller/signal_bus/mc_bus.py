@@ -15,6 +15,8 @@ from .subscribers import (
     PackageReadySubscriber,
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
+    StartCalibrationSubscriber,
+    StartStaticInitSubscriber,
     InterruptMeasuringSubscriber,
     ReadErrorSubscriber,
     HandshakeInitSubscriber,
@@ -33,7 +35,6 @@ from async_mc_controller.byte_source.read_error import ReadError
 
 #########################
 
-_bus: SignalBus = SignalBus()
 _logger = app_logger.getLogger('App.Bus')
 
 # Сигналы, эмиссия которых логируется на уровне DEBUG.
@@ -41,6 +42,8 @@ _logger = app_logger.getLogger('App.Bus')
 _logged_signals: set[Signals] = {
     Signals.START_MEASURING,
     Signals.STOP_MEASURING,
+    Signals.START_CALIBRATION,
+    Signals.START_STATIC_INIT,
     Signals.INTERRUPT_MEASURING,
     Signals.READ_ERROR,
     Signals.HANDSHAKE_INIT,
@@ -56,21 +59,6 @@ _logged_signals: set[Signals] = {
 }
 
 
-async def _emit(signal: Signals, *args: Any, **kwargs: Any) -> None:
-    """Внутренняя обёртка над _bus.emit с опциональным логированием.
-
-    Логирует эмиссию сигнала если он входит в _logged_signals
-    и уровень логирования равен DEBUG. Отправитель определяется
-    через sys._getframe() — только при необходимости логирования.
-    Используется всеми дескрипторами AppBus вместо прямого вызова _bus.emit.
-    """
-    if signal in _logged_signals and config.logger_config.log_level == logging.DEBUG:
-        frame  = sys._getframe(2)   # 0=_emit, 1=дескриптор emit, 2=реальный вызывающий код
-        caller = frame.f_locals.get('self', None)
-        sender = type(caller).__name__ if caller else frame.f_code.co_name
-        _logger.debug(f'[{sender}] → {signal.value}')
-    await _bus.emit(signal, *args, **kwargs)
-
 # ------------------------------------------
 
 
@@ -79,12 +67,9 @@ class McBus:
 
     Каждый сигнал представлен отдельным вложенным классом-дескриптором,
     который инкапсулирует методы subscribe, unsubscribe и emit.
-    Все вложенные классы обращаются к модульному синглтону `_bus`
-    в момент вызова метода — это позволяет подменять `_bus` в тестах
-    через unittest.mock.patch('signal_bus.app_bus._bus', new=TestBus()).
 
     Пример использования:
-        bus = AppBus()
+        bus = McBus()
 
         class Decoder:
             async def on_byte_received(self, bt: bytes) -> None:
@@ -95,6 +80,25 @@ class McBus:
         await bus.new_byte.emit(b'\\xff')
     """
 
+    _signal_bus: SignalBus = SignalBus()
+    
+    @staticmethod
+    async def _emit(signal: Signals, *args: Any, **kwargs: Any) -> None:
+        """Внутренняя обёртка над _signal_bus.emit с опциональным логированием.
+    
+        Логирует эмиссию сигнала если он входит в _logged_signals
+        и уровень логирования равен DEBUG. Отправитель определяется
+        через sys._getframe() — только при необходимости логирования.
+        Используется всеми дескрипторами McBus вместо прямого вызова _signal_bus.emit.
+        """
+        if signal in _logged_signals and config.logger_config.log_level == logging.DEBUG:
+            frame  = sys._getframe(2)   # 0=_emit, 1=дескриптор emit, 2=реальный вызывающий код
+            caller = frame.f_locals.get('self', None)
+            sender = type(caller).__name__ if caller else frame.f_code.co_name
+            _logger.debug(f'[{sender}] → {signal.value}')
+        await McBus._signal_bus.emit(signal, *args, **kwargs)
+
+
     # =============================================================
     # ===================== Передача данных =======================
     # =============================================================
@@ -104,15 +108,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: NewByteSubscriber) -> None:
-            _bus.subscribe(Signals.NEW_BYTE, subscriber.on_byte_received)
+            McBus._signal_bus.subscribe(Signals.NEW_BYTE, subscriber.on_byte_received)
 
         @staticmethod
         def unsubscribe(subscriber: NewByteSubscriber) -> None:
-            _bus.unsubscribe(Signals.NEW_BYTE, subscriber.on_byte_received)
+            McBus._signal_bus.unsubscribe(Signals.NEW_BYTE, subscriber.on_byte_received)
 
         @staticmethod
         async def emit(bt: bytes) -> None:
-            await _emit(Signals.NEW_BYTE, bt)
+            await McBus._emit(Signals.NEW_BYTE, bt)
 
     # ------------------------------------------
 
@@ -121,56 +125,90 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: PackageReadySubscriber) -> None:
-            _bus.subscribe(Signals.PACKAGE_READY, subscriber.on_package_ready)
+            McBus._signal_bus.subscribe(Signals.PACKAGE_READY, subscriber.on_package_ready)
 
         @staticmethod
         def unsubscribe(subscriber: PackageReadySubscriber) -> None:
-            _bus.unsubscribe(Signals.PACKAGE_READY, subscriber.on_package_ready)
+            McBus._signal_bus.unsubscribe(Signals.PACKAGE_READY, subscriber.on_package_ready)
 
         @staticmethod
         async def emit(data) -> None:
-            await _emit(Signals.PACKAGE_READY, data)
+            await McBus._emit(Signals.PACKAGE_READY, data)
 
     # =============================================================
     # =================== Управление измерением ===================
     # =============================================================
 
     class StartMeasuringSignal:
-        """Эмиттится Controller для запуска чтения."""
+        """Эмиттится контроллером для запуска чтения."""
 
         @staticmethod
         def subscribe(subscriber: StartMeasuringSubscriber) -> None:
-            _bus.subscribe(Signals.START_MEASURING, subscriber.on_start_measuring)
+            McBus._signal_bus.subscribe(Signals.START_MEASURING, subscriber.on_start_measuring)
 
         @staticmethod
         def unsubscribe(subscriber: StartMeasuringSubscriber) -> None:
-            _bus.unsubscribe(Signals.START_MEASURING, subscriber.on_start_measuring)
+            McBus._signal_bus.unsubscribe(Signals.START_MEASURING, subscriber.on_start_measuring)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.START_MEASURING)
+            await McBus._emit(Signals.START_MEASURING)
 
     # ------------------------------------------
 
     class StopMeasuringSignal:
-        """Эмиттится Controller для остановки чтения."""
+        """Эмиттится контроллером для остановки чтения."""
 
         @staticmethod
         def subscribe(subscriber: StopMeasuringSubscriber) -> None:
-            _bus.subscribe(Signals.STOP_MEASURING, subscriber.on_stop_measuring)
+            McBus._signal_bus.subscribe(Signals.STOP_MEASURING, subscriber.on_stop_measuring)
 
         @staticmethod
         def unsubscribe(subscriber: StopMeasuringSubscriber) -> None:
-            _bus.unsubscribe(Signals.STOP_MEASURING, subscriber.on_stop_measuring)
+            McBus._signal_bus.unsubscribe(Signals.STOP_MEASURING, subscriber.on_stop_measuring)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.STOP_MEASURING)
+            await McBus._emit(Signals.STOP_MEASURING)
+
+    # ------------------------------------------
+
+    class StartCalibrationSignal:
+        """Эмиттится контроллером для запуска калибровки датчиков."""
+
+        @staticmethod
+        def subscribe(subscriber: StartCalibrationSubscriber) -> None:
+            McBus._signal_bus.subscribe(Signals.START_CALIBRATION, subscriber.on_start_calibration)
+
+        @staticmethod
+        def unsubscribe(subscriber: StartCalibrationSubscriber) -> None:
+            McBus._signal_bus.unsubscribe(Signals.START_CALIBRATION, subscriber.on_start_calibration)
+
+        @staticmethod
+        async def emit() -> None:
+            await McBus._emit(Signals.START_CALIBRATION)
+
+    # ------------------------------------------
+
+    class StartStaticInitSignal:
+        """Эмиттится контроллером для запуска сбора статического буфера."""
+
+        @staticmethod
+        def subscribe(subscriber: StartStaticInitSubscriber) -> None:
+            McBus._signal_bus.subscribe(Signals.START_STATIC_INIT, subscriber.on_start_static_init)
+
+        @staticmethod
+        def unsubscribe(subscriber: StartStaticInitSubscriber) -> None:
+            McBus._signal_bus.unsubscribe(Signals.START_STATIC_INIT, subscriber.on_start_static_init)
+
+        @staticmethod
+        async def emit() -> None:
+            await McBus._emit(Signals.START_STATIC_INIT)
 
     # ------------------------------------------
 
     class InterruptMeasuringSignal:
-        """Эмиттится Controller при аварийной остановке (HANDSHAKE_FAILED,
+        """Эмиттится контроллером при аварийной остановке (HANDSHAKE_FAILED,
         DEVICE_LOST, COMMAND_ACK_TIMEOUT, COMMAND_REJECTED, READ_ERROR).
 
         В отличие от STOP_MEASURING, означает «связь с МК нарушена —
@@ -178,36 +216,36 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: InterruptMeasuringSubscriber) -> None:
-            _bus.subscribe(Signals.INTERRUPT_MEASURING, subscriber.on_interrupt_measuring)
+            McBus._signal_bus.subscribe(Signals.INTERRUPT_MEASURING, subscriber.on_interrupt_measuring)
 
         @staticmethod
         def unsubscribe(subscriber: InterruptMeasuringSubscriber) -> None:
-            _bus.unsubscribe(Signals.INTERRUPT_MEASURING, subscriber.on_interrupt_measuring)
+            McBus._signal_bus.unsubscribe(Signals.INTERRUPT_MEASURING, subscriber.on_interrupt_measuring)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.INTERRUPT_MEASURING)
+            await McBus._emit(Signals.INTERRUPT_MEASURING)
 
     # ------------------------------------------
 
     class ReadErrorSignal:
         """Эмиттится AsyncComPort.reading_loop при перехвате ComPortReadError.
 
-        Слушает только Controller — выставляет _force_stop. Сам ComPort на
+        Слушает только контроллером — выставляет _force_stop. Сам ComPort на
         этот сигнал не подписан: о необходимости остановки он узнаёт через
-        INTERRUPT_MEASURING, который Controller эмиттит из stop()."""
+        INTERRUPT_MEASURING, который контроллером эмиттит из stop()."""
 
         @staticmethod
         def subscribe(subscriber: ReadErrorSubscriber) -> None:
-            _bus.subscribe(Signals.READ_ERROR, subscriber.on_read_error)
+            McBus._signal_bus.subscribe(Signals.READ_ERROR, subscriber.on_read_error)
 
         @staticmethod
         def unsubscribe(subscriber: ReadErrorSubscriber) -> None:
-            _bus.unsubscribe(Signals.READ_ERROR, subscriber.on_read_error)
+            McBus._signal_bus.unsubscribe(Signals.READ_ERROR, subscriber.on_read_error)
 
         @staticmethod
         async def emit(err: 'ReadError') -> None:
-            await _emit(Signals.READ_ERROR, err)
+            await McBus._emit(Signals.READ_ERROR, err)
 
     # =============================================================
     # ====================== Рукопожатие =========================
@@ -222,15 +260,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: HandshakeInitSubscriber) -> None:
-            _bus.subscribe(Signals.HANDSHAKE_INIT, subscriber.on_handshake_init)
+            McBus._signal_bus.subscribe(Signals.HANDSHAKE_INIT, subscriber.on_handshake_init)
 
         @staticmethod
         def unsubscribe(subscriber: HandshakeInitSubscriber) -> None:
-            _bus.unsubscribe(Signals.HANDSHAKE_INIT, subscriber.on_handshake_init)
+            McBus._signal_bus.unsubscribe(Signals.HANDSHAKE_INIT, subscriber.on_handshake_init)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.HANDSHAKE_INIT)
+            await McBus._emit(Signals.HANDSHAKE_INIT)
 
     # ------------------------------------------
 
@@ -239,15 +277,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: HandshakeDoneSubscriber) -> None:
-            _bus.subscribe(Signals.HANDSHAKE_DONE, subscriber.on_handshake_done)
+            McBus._signal_bus.subscribe(Signals.HANDSHAKE_DONE, subscriber.on_handshake_done)
 
         @staticmethod
         def unsubscribe(subscriber: HandshakeDoneSubscriber) -> None:
-            _bus.unsubscribe(Signals.HANDSHAKE_DONE, subscriber.on_handshake_done)
+            McBus._signal_bus.unsubscribe(Signals.HANDSHAKE_DONE, subscriber.on_handshake_done)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.HANDSHAKE_DONE)
+            await McBus._emit(Signals.HANDSHAKE_DONE)
 
     # ------------------------------------------
 
@@ -256,15 +294,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: HandshakeFailedSubscriber) -> None:
-            _bus.subscribe(Signals.HANDSHAKE_FAILED, subscriber.on_handshake_failed)
+            McBus._signal_bus.subscribe(Signals.HANDSHAKE_FAILED, subscriber.on_handshake_failed)
 
         @staticmethod
         def unsubscribe(subscriber: HandshakeFailedSubscriber) -> None:
-            _bus.unsubscribe(Signals.HANDSHAKE_FAILED, subscriber.on_handshake_failed)
+            McBus._signal_bus.unsubscribe(Signals.HANDSHAKE_FAILED, subscriber.on_handshake_failed)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.HANDSHAKE_FAILED)
+            await McBus._emit(Signals.HANDSHAKE_FAILED)
 
     # =============================================================
     # ======================== Heartbeat ==========================
@@ -275,15 +313,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: HeartbeatSentSubscriber) -> None:
-            _bus.subscribe(Signals.HEARTBEAT_SENT, subscriber.on_heartbeat_sent)
+            McBus._signal_bus.subscribe(Signals.HEARTBEAT_SENT, subscriber.on_heartbeat_sent)
 
         @staticmethod
         def unsubscribe(subscriber: HeartbeatSentSubscriber) -> None:
-            _bus.unsubscribe(Signals.HEARTBEAT_SENT, subscriber.on_heartbeat_sent)
+            McBus._signal_bus.unsubscribe(Signals.HEARTBEAT_SENT, subscriber.on_heartbeat_sent)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.HEARTBEAT_SENT)
+            await McBus._emit(Signals.HEARTBEAT_SENT)
 
     # ------------------------------------------
 
@@ -292,15 +330,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: HeartbeatAckSubscriber) -> None:
-            _bus.subscribe(Signals.HEARTBEAT_ACK, subscriber.on_heartbeat_ack)
+            McBus._signal_bus.subscribe(Signals.HEARTBEAT_ACK, subscriber.on_heartbeat_ack)
 
         @staticmethod
         def unsubscribe(subscriber: HeartbeatAckSubscriber) -> None:
-            _bus.unsubscribe(Signals.HEARTBEAT_ACK, subscriber.on_heartbeat_ack)
+            McBus._signal_bus.unsubscribe(Signals.HEARTBEAT_ACK, subscriber.on_heartbeat_ack)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.HEARTBEAT_ACK)
+            await McBus._emit(Signals.HEARTBEAT_ACK)
 
     # ------------------------------------------
 
@@ -309,15 +347,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: DeviceLostSubscriber) -> None:
-            _bus.subscribe(Signals.DEVICE_LOST, subscriber.on_device_lost)
+            McBus._signal_bus.subscribe(Signals.DEVICE_LOST, subscriber.on_device_lost)
 
         @staticmethod
         def unsubscribe(subscriber: DeviceLostSubscriber) -> None:
-            _bus.unsubscribe(Signals.DEVICE_LOST, subscriber.on_device_lost)
+            McBus._signal_bus.unsubscribe(Signals.DEVICE_LOST, subscriber.on_device_lost)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.DEVICE_LOST)
+            await McBus._emit(Signals.DEVICE_LOST)
 
     # =============================================================
     # ==================== Подтверждение команд ===================
@@ -328,15 +366,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: CommandSentSubscriber) -> None:
-            _bus.subscribe(Signals.COMMAND_SENT, subscriber.on_command_sent)
+            McBus._signal_bus.subscribe(Signals.COMMAND_SENT, subscriber.on_command_sent)
 
         @staticmethod
         def unsubscribe(subscriber: CommandSentSubscriber) -> None:
-            _bus.unsubscribe(Signals.COMMAND_SENT, subscriber.on_command_sent)
+            McBus._signal_bus.unsubscribe(Signals.COMMAND_SENT, subscriber.on_command_sent)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.COMMAND_SENT)
+            await McBus._emit(Signals.COMMAND_SENT)
 
     # ------------------------------------------
 
@@ -345,15 +383,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: CommandAckSubscriber) -> None:
-            _bus.subscribe(Signals.COMMAND_ACK, subscriber.on_command_ack)
+            McBus._signal_bus.subscribe(Signals.COMMAND_ACK, subscriber.on_command_ack)
 
         @staticmethod
         def unsubscribe(subscriber: CommandAckSubscriber) -> None:
-            _bus.unsubscribe(Signals.COMMAND_ACK, subscriber.on_command_ack)
+            McBus._signal_bus.unsubscribe(Signals.COMMAND_ACK, subscriber.on_command_ack)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.COMMAND_ACK)
+            await McBus._emit(Signals.COMMAND_ACK)
 
     # ------------------------------------------
 
@@ -362,15 +400,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: CommandAckTimeoutSubscriber) -> None:
-            _bus.subscribe(Signals.COMMAND_ACK_TIMEOUT, subscriber.on_command_ack_timeout)
+            McBus._signal_bus.subscribe(Signals.COMMAND_ACK_TIMEOUT, subscriber.on_command_ack_timeout)
 
         @staticmethod
         def unsubscribe(subscriber: CommandAckTimeoutSubscriber) -> None:
-            _bus.unsubscribe(Signals.COMMAND_ACK_TIMEOUT, subscriber.on_command_ack_timeout)
+            McBus._signal_bus.unsubscribe(Signals.COMMAND_ACK_TIMEOUT, subscriber.on_command_ack_timeout)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.COMMAND_ACK_TIMEOUT)
+            await McBus._emit(Signals.COMMAND_ACK_TIMEOUT)
 
     # ------------------------------------------
 
@@ -383,15 +421,15 @@ class McBus:
 
         @staticmethod
         def subscribe(subscriber: CommandRejectedSubscriber) -> None:
-            _bus.subscribe(Signals.COMMAND_REJECTED, subscriber.on_command_rejected)
+            McBus._signal_bus.subscribe(Signals.COMMAND_REJECTED, subscriber.on_command_rejected)
 
         @staticmethod
         def unsubscribe(subscriber: CommandRejectedSubscriber) -> None:
-            _bus.unsubscribe(Signals.COMMAND_REJECTED, subscriber.on_command_rejected)
+            McBus._signal_bus.unsubscribe(Signals.COMMAND_REJECTED, subscriber.on_command_rejected)
 
         @staticmethod
         async def emit() -> None:
-            await _emit(Signals.COMMAND_REJECTED)
+            await McBus._emit(Signals.COMMAND_REJECTED)
 
     # =============================================================
     # ===================== Интроспекция ==========================
@@ -402,14 +440,14 @@ class McBus:
         """Возвращает текущих подписчиков всех сигналов в виде объектов-владельцев.
 
         Тонкая делегирующая обёртка над `SignalBus.get_subscribers()`,
-        чтобы пользователи `AppBus` могли пользоваться им как единой точкой
-        входа и не обращались к приватному модульному `_bus` напрямую.
+        чтобы пользователи `McBus.` могли пользоваться им как единой точкой
+        входа и не обращались к приватному модульному `McBus._bus` напрямую.
 
         Returns:
             dict[Signals, list[object]]: Словарь {сигнал: [объекты-подписчики]}.
                 Сигналы без подписчиков попадают в результат с пустым списком.
         """
-        return _bus.get_subscribers()
+        return McBus._signal_bus.get_subscribers()
 
     # =============================================================
 
@@ -422,6 +460,8 @@ class McBus:
         self.start_measuring = McBus.StartMeasuringSignal()
         self.stop_measuring = McBus.StopMeasuringSignal()
         self.interrupt_measuring = McBus.InterruptMeasuringSignal()
+        self.start_calibration = McBus.StartCalibrationSignal()
+        self.start_static_init = McBus.StartStaticInitSignal()
 
         # Ошибки чтения
         self.read_error = McBus.ReadErrorSignal()

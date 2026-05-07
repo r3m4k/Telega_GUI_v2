@@ -2,8 +2,8 @@
 """Модуль протоколов подписчиков сигнальной шины.
 
 Каждый протокол описывает контракт объекта, который может быть подписан
-на конкретный сигнал через AppBus. Протокол фиксирует имя метода и его
-сигнатуру — линтер проверяет соответствие при передаче объекта в AppBus.
+на конкретный сигнал через McBus. Протокол фиксирует имя метода и его
+сигнатуру — линтер проверяет соответствие при передаче объекта в McBus.
 
 Соглашение об именовании:
     - Протокол: <ИмяСигнала>Subscriber
@@ -12,7 +12,7 @@
 Добавление нового сигнала:
     1. Добавить значение в Signals (signals.py)
     2. Добавить протокол в этот файл
-    3. Добавить методы subscribe/unsubscribe/emit в AppBus (app_bus.py)
+    3. Добавить методы subscribe/unsubscribe/emit в McBus (mc_bus.py)
     4. Экспортировать протокол в __init__.py
 """
 
@@ -31,7 +31,7 @@ class NewByteSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.NEW_BYTE.
 
     Любой объект, реализующий метод on_byte_received, может быть
-    передан в AppBus.new_byte.subscribe().
+    передан в McBus.new_byte.subscribe().
 
     Пример реализации:
         class Decoder:
@@ -47,7 +47,7 @@ class PackageReadySubscriber(Protocol):
     """Протокол подписчика сигнала Signals.PACKAGE_READY.
 
     Любой объект, реализующий метод on_package_ready, может быть
-    передан в AppBus.package_ready.subscribe().
+    передан в McBus.package_ready.subscribe().
 
     Пример реализации:
         class Controller:
@@ -63,7 +63,7 @@ class StartMeasuringSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.START_MEASURING.
 
     Любой объект, реализующий метод on_start_measuring, может быть
-    передан в AppBus.start_measuring.subscribe().
+    передан в McBus.start_measuring.subscribe().
 
     Пример реализации:
         class AsyncComPort:
@@ -79,7 +79,7 @@ class StopMeasuringSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.STOP_MEASURING.
 
     Любой объект, реализующий метод on_stop_measuring, может быть
-    передан в AppBus.stop_measuring.subscribe().
+    передан в McBus.stop_measuring.subscribe().
 
     Пример реализации:
         class AsyncComPort:
@@ -88,6 +88,37 @@ class StopMeasuringSubscriber(Protocol):
     """
     async def on_stop_measuring(self) -> None: ...
 
+# ------------------------------------------
+
+class StartCalibrationSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.START_CALIBRATION.
+
+    Любой объект, реализующий метод on_start_calibration, может быть
+    передан в McBus.stop_measuring.subscribe().
+
+    Пример реализации:
+        class ComPortTelega:
+            async def on_start_calibration(self) -> None:
+                self._telega_mc_logger.debug('Начало калибровки')
+                await self._send_command_with_ack(self._set_calibration_stage_command)
+    """
+    async def on_start_calibration(self) -> None: ...
+
+# ------------------------------------------
+
+class StartStaticInitSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.START_STATIC_INIT.
+
+    Любой объект, реализующий метод on_start_static_init, может быть
+    передан в McBus.stop_measuring.subscribe().
+
+    Пример реализации:
+        class ComPortTelega:
+            async def on_start_static_init(self) -> None:
+                self._telega_mc_logger.debug('Начало набора статического буфера')
+                await self._send_command_with_ack(self._set_static_init_stage_command)
+    """
+    async def on_start_static_init(self) -> None: ...
 
 # ------------------------------------------
 
@@ -158,7 +189,7 @@ class HandshakeDoneSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.HANDSHAKE_DONE.
 
     Любой объект, реализующий метод on_handshake_done, может быть
-    передан в AppBus.handshake_done.subscribe().
+    передан в McBus.handshake_done.subscribe().
 
     Пример реализации:
         class AsyncComPortImu:
@@ -208,7 +239,7 @@ class HeartbeatAckSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.HEARTBEAT_ACK.
 
     Любой объект, реализующий метод on_heartbeat_ack, может быть
-    передан в AppBus.heartbeat_ack.subscribe().
+    передан в McBus.heartbeat_ack.subscribe().
 
     Пример реализации:
         class AsyncComPortImu:
@@ -224,7 +255,7 @@ class DeviceLostSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.DEVICE_LOST.
 
     Любой объект, реализующий метод on_device_lost, может быть
-    передан в AppBus.device_lost.subscribe().
+    передан в McBus.device_lost.subscribe().
 
     Пример реализации:
         class Controller:
@@ -240,7 +271,7 @@ class HandshakeFailedSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.HANDSHAKE_FAILED.
 
     Любой объект, реализующий метод on_handshake_failed, может быть
-    передан в AppBus.handshake_failed.subscribe().
+    передан в McBus.handshake_failed.subscribe().
 
     Пример реализации:
         class Controller:

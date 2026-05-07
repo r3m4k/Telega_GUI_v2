@@ -14,6 +14,8 @@ from .subscribers import (
     PackageReadySubscriber,
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
+    StartCalibrationSubscriber,
+    StartStaticInitSubscriber,
     InterruptMeasuringSubscriber,
     ReadErrorSubscriber,
     HandshakeInitSubscriber,
@@ -27,10 +29,7 @@ from .subscribers import (
     CommandAckTimeoutSubscriber,
     CommandRejectedSubscriber,
 )
-from .app_bus import McBus
-
-# Глобальный экземпляр шины для использования во всём приложении
-bus = McBus()
+from .mc_bus import McBus
 
 # --------------------------------------------------------
 
@@ -40,15 +39,16 @@ __all__ = [
     'Subscriber',
     'Signals',
 
-    # Типизированная обёртка и глобальный экземпляр
+    # Типизированная обёртка
     'McBus',
-    'bus',
 
     # Протоколы подписчиков
     'NewByteSubscriber',
     'PackageReadySubscriber',
     'StartMeasuringSubscriber',
     'StopMeasuringSubscriber',
+    'StartCalibrationSubscriber',
+    'StartStaticInitSubscriber',
     'InterruptMeasuringSubscriber',
     'ReadErrorSubscriber',
     'HandshakeInitSubscriber',
