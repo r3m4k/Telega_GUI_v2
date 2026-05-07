@@ -9,14 +9,14 @@ __author__ = 'Roman Romanovskiy'
 
 from async_mc_controller.byte_source.com_port.utils import get_ComPorts
 from async_mc_controller.byte_source.com_port.com_port import AsyncComPort
-from async_mc_controller.byte_source.com_port.com_port_imu import AsyncComPortImu
+from async_mc_controller.byte_source.com_port.com_port_device import AsyncComPortDevice
 from async_mc_controller.byte_source.com_port.com_port_error import ComPortReadError
 from async_mc_controller.byte_source.com_port.com_port_setting import AsyncComPortSetting
-from async_mc_controller.byte_source.com_port.packet_builders import (
+from mc_session.packet_builders import (
     BasePacketBuilder,
-    PacketBuilderImu,
-    PacketBuilderImuText,
-    PacketBuilderImuBytes,
+    PacketBuilderTelega,
+    PacketBuilderTelegaText,
+    PacketBuilderTelegaBytes,
 )
 
 # --------------------------------------------------------
@@ -24,13 +24,13 @@ from async_mc_controller.byte_source.com_port.packet_builders import (
 __all__ = [
     'get_ComPorts',
     'AsyncComPort',
-    'AsyncComPortImu',
+    'AsyncComPortDevice',
     'ComPortReadError',
     'AsyncComPortSetting',
     'BasePacketBuilder',
-    'PacketBuilderImu',
-    'PacketBuilderImuText',
-    'PacketBuilderImuBytes',
+    'PacketBuilderTelega',
+    'PacketBuilderTelegaText',
+    'PacketBuilderTelegaBytes',
 ]
 
 # --------------------------------------------------------

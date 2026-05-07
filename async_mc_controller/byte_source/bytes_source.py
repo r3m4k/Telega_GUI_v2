@@ -26,32 +26,12 @@ class AsyncBytesSource(ABC):
     контекстного менеджера.
 
     Методы:
-        setup():              Подготовка ресурсов (открытие порта, файла и т.д.).
-        cleanup():            Освобождение ресурсов (закрытие порта, файла).
         read_byte() -> bytes: Асинхронное чтение одного байта.
 
     Пример использования:
         async with AsyncComPort('COM3', 115200) as source:
             byte = await source.read_byte()
     """
-
-    @abstractmethod
-    async def setup(self) -> None:
-        """Выполняет подготовку ресурсов перед чтением.
-
-        Вызывается автоматически при входе в асинхронный контекстный менеджер.
-        Должен быть реализован в наследнике.
-        """
-        pass
-
-    @abstractmethod
-    async def cleanup(self) -> None:
-        """Освобождает ресурсы после завершения работы.
-
-        Вызывается автоматически при выходе из асинхронного контекстного менеджера.
-        Должен быть реализован в наследнике.
-        """
-        pass
 
     @abstractmethod
     async def read_byte(self) -> bytes:
@@ -67,22 +47,15 @@ class AsyncBytesSource(ABC):
         """
         pass
 
+    @abstractmethod
     async def __aenter__(self) -> 'AsyncBytesSource':
-        """Вход в асинхронный контекстный менеджер.
+        """Вход в асинхронный контекстный менеджер."""
+        pass
 
-        Вызывает `setup()` и возвращает экземпляр источника.
-        """
-        await self.setup()
-        return self
-
+    @abstractmethod
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
-        """Выход из асинхронного контекстного менеджера.
-
-        Вызывает `cleanup()`. Возвращает `False`, чтобы исключения,
-        возникшие внутри блока `async with`, пробрасывались дальше.
-        """
-        await self.cleanup()
-        return False
+        """Выход из асинхронного контекстного менеджера."""
+        pass
 
 
 # ------------------------------------------

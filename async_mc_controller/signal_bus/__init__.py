@@ -27,10 +27,10 @@ from .subscribers import (
     CommandAckTimeoutSubscriber,
     CommandRejectedSubscriber,
 )
-from .app_bus import AppBus
+from .app_bus import McBus
 
 # Глобальный экземпляр шины для использования во всём приложении
-bus = AppBus()
+bus = McBus()
 
 # --------------------------------------------------------
 
@@ -41,7 +41,7 @@ __all__ = [
     'Signals',
 
     # Типизированная обёртка и глобальный экземпляр
-    'AppBus',
+    'McBus',
     'bus',
 
     # Протоколы подписчиков

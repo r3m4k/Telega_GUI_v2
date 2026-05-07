@@ -11,7 +11,7 @@ from async_mc_controller.controller.controller import Controller
 
 #########################
 
-_logger = app_logger.get_logger('App.Controller.MpController')
+_logger = app_logger.getLogger('App.Controller.MpController')
 
 # ------------------------------------------
 

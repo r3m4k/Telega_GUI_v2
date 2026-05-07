@@ -25,7 +25,7 @@ from async_mc_controller.signal_bus import bus
 
 #############################################
 
-_logger = app_logger.get_logger('App.BaseDecoder')
+_logger = app_logger.getLogger('App.BaseDecoder')
 
 T = TypeVar('T')   # Тип декодированного пакета данных
 

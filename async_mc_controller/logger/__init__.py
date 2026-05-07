@@ -7,18 +7,16 @@ __author__ = 'Roman Romanovskiy'
 
 # --------------------------------------------------------
 
-from async_mc_controller.logger.app_logger import AppLogger
-
-# --------------------------------------------------------
-
-# Глобальный экземпляр логгера для использования во всём приложении
-app_logger = AppLogger()
+from async_mc_controller.logger.logger_protocol import LoggerProtocol
+from async_mc_controller.logger.mc_logger import McLogger
+from async_mc_controller.logger.foo_logger import FooLogger
 
 # --------------------------------------------------------
 
 __all__ = [
-    'AppLogger',
-    'app_logger',
+    'LoggerProtocol',
+    'McLogger',
+    'FooLogger'
 ]
 
 # --------------------------------------------------------

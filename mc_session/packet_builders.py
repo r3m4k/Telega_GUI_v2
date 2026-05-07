@@ -87,19 +87,15 @@ class BasePacketBuilder(ABC):
 # ------------------------------------------
 
 
-class PacketBuilderImu(BasePacketBuilder):
-    """Абстрактный построитель пакетов протокола IMU COM-порта.
+class PacketBuilderTelega(BasePacketBuilder):
+    """Абстрактный построитель пакетов протокола Telega COM-порта.
 
-    Задаёт заголовок IMU-протокола и обязывает наследников вернуть байт
+    Задаёт заголовок протокола и обязывает наследников вернуть байт
     формата собранного пакета через абстрактный classmethod `_packet_format`.
 
     Наследники определяют:
       - конкретный байт формата (через `_packet_format`);
-      - публичный build-метод (`build_text_command`, `build_byte_command`, ...),
-        внутри которого вызывают `cls._build(cls._packet_format(), body)`.
-
-    Класс не предназначен для прямого использования — экземпляры не создаются,
-    публичные build-методы определяются только в конкретных наследниках.
+      - публичный build-метод, внутри которого вызывают `cls._build(cls._packet_format(), body)`.
 
     Пример наследования:
         class PacketBuilderImuFoo(PacketBuilderImu):
@@ -112,7 +108,7 @@ class PacketBuilderImu(BasePacketBuilder):
                 return cls._build(cls._packet_format(), body)
     """
 
-    # Заголовок IMU-протокола (общий для всех наследников)
+    # Заголовок протокола (общий для всех наследников)
     _HEADER: bytes = bytes([0xC8, 0x8C])
 
     @classmethod
@@ -133,15 +129,15 @@ class PacketBuilderImu(BasePacketBuilder):
 # ------------------------------------------
 
 
-class PacketBuilderImuText(PacketBuilderImu):
-    """Построитель пакетов IMU с текстовой командой.
+class PacketBuilderTelegaText(PacketBuilderTelega):
+    """Создатель пакетов по протоколу Telega с текстовой командой.
 
-    Упаковывает строковый текст команды в пакет протокола IMU с форматом
+    Упаковывает строковый текст команды в пакет протокола с форматом
     `0xAB` (CommandFormat). Используется для отправки на МК команд вида
     'HANDSHAKE_REQ', 'HEARTBEAT_REQ' и т.п.
 
     Пример использования:
-        packet = PacketBuilderImuText.build_text_command('HANDSHAKE_REQ')
+        packet = PacketBuilderTelegaText.build_text_command('HANDSHAKE_REQ')
         self._port_writer.write(packet)
     """
 
@@ -171,13 +167,12 @@ class PacketBuilderImuText(PacketBuilderImu):
 # ------------------------------------------
 
 
-class PacketBuilderImuBytes(PacketBuilderImu):
-    """Построитель пакетов IMU с байтовой командой.
+class PacketBuilderTelegaBytes(PacketBuilderTelega):
+    """Создатель пакетов по протоколу Telega с байтовой командой.
 
-    Упаковывает готовую последовательность байтов в пакет протокола IMU
+    Упаковывает готовую последовательность байтов в пакет протокола
     с форматом `0xAB` (CommandFormat). Используется для отправки на МК
-    команд вида `bytes([0xAA, 0x01])` (перевод в холостой режим),
-    `bytes([0xAA, 0x02])` (перевод в режим измерения) и т.п.
+    команд вида `bytes([0xAA, 0x01])`, `bytes([0xAA, 0x02])` и т.п.
 
     Отличается от PacketBuilderImuText только семантикой тела:
     raw bytes вместо ASCII-строки. Байт формата тот же — 0xAB.

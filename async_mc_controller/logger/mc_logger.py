@@ -25,11 +25,11 @@ from async_mc_controller.config import config
 #############################################
 
 # Название корневого логгера приложения
-_ROOT_LOGGER_NAME = 'App'
+_ROOT_LOGGER_NAME = 'MCController'
 
 # ------------------------------------------
 
-class AppLogger:
+class McLogger:
     """Класс для управления логгером приложения.
 
     Настраивает корневой логгер с файловым и/или консольным обработчиками
@@ -70,7 +70,8 @@ class AppLogger:
     # =================== Настройка обработчиков ==================
     # =============================================================
 
-    def _make_formatter(self) -> logging.Formatter:
+    @staticmethod
+    def _make_formatter() -> logging.Formatter:
         """Создаёт форматтер из текущей конфигурации."""
         return logging.Formatter(
             config.logger_config.log_format,
@@ -177,10 +178,10 @@ class AppLogger:
     # =============================================================
 
     @staticmethod
-    def get_logger(name: str) -> logging.Logger:
-        """Возвращает дочерний логгер с указанным именем.
+    def getLogger(name: str) -> logging.Logger:
+        """Возвращает логгер с указанным именем.
 
-        Дочерний логгер наследует уровень и обработчики корневого логгера,
+        Логгер наследует уровень и обработчики корневого логгера,
         но пишет своё имя в каждую запись лога для удобной фильтрации.
 
         Args:
@@ -188,13 +189,36 @@ class AppLogger:
                         например 'App.ComPort', 'App.Decoder', 'App.Controller'.
 
         Returns:
-            logging.Logger: Настроенный дочерний логгер.
+            logging.Logger: Настроенный логгер.
 
         Пример использования:
             logger = app_logger.get_logger('App.ComPort')
             logger.info('Подключение к порту...')
         """
         return logging.getLogger(name)
+
+    @staticmethod
+    def get_child_logger(name: str) -> logging.Logger:
+        """Возвращает дочерний логгер с указанным именем
+        в формате _ROOT_LOGGER_NAME.name
+
+        Дочерний логгер наследует уровень и обработчики корневого логгера,
+        но пишет своё имя в каждую запись лога для удобной фильтрации.
+
+        Args:
+            name (str): Явное имя логгера. Для многоуровневой иерархии
+                        логгеров имена следует разделять через точку.
+
+        Returns:
+            logging.Logger: Настроенный дочерний логгер.
+
+        Пример использования:
+            logger = app_logger.get_logger('ComPort')
+            logger.info('Подключение к порту...')
+
+            logger = app_logger.get_logger('ComPort.Device')
+            logger.error('Устройство не отвечает!')
+        """
 
     def set_log_dir(self, log_dir: Path) -> None:
         """Изменяет директорию для хранения логов.

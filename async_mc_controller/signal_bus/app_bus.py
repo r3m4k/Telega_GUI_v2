@@ -34,7 +34,7 @@ from async_mc_controller.byte_source.read_error import ReadError
 #########################
 
 _bus: SignalBus = SignalBus()
-_logger = app_logger.get_logger('App.Bus')
+_logger = app_logger.getLogger('App.Bus')
 
 # Сигналы, эмиссия которых логируется на уровне DEBUG.
 # Высокочастотные сигналы (NEW_BYTE, PACKAGE_READY) намеренно исключены.
@@ -74,7 +74,7 @@ async def _emit(signal: Signals, *args: Any, **kwargs: Any) -> None:
 # ------------------------------------------
 
 
-class AppBus:
+class McBus:
     """Типизированная обёртка над SignalBus для конкретного приложения.
 
     Каждый сигнал представлен отдельным вложенным классом-дескриптором,
@@ -415,29 +415,29 @@ class AppBus:
 
     def __init__(self):
         # Передача данных
-        self.new_byte = AppBus.NewByteSignal()
-        self.package_ready = AppBus.PackageReadySignal()
+        self.new_byte = McBus.NewByteSignal()
+        self.package_ready = McBus.PackageReadySignal()
 
         # Управление измерением
-        self.start_measuring = AppBus.StartMeasuringSignal()
-        self.stop_measuring = AppBus.StopMeasuringSignal()
-        self.interrupt_measuring = AppBus.InterruptMeasuringSignal()
+        self.start_measuring = McBus.StartMeasuringSignal()
+        self.stop_measuring = McBus.StopMeasuringSignal()
+        self.interrupt_measuring = McBus.InterruptMeasuringSignal()
 
         # Ошибки чтения
-        self.read_error = AppBus.ReadErrorSignal()
+        self.read_error = McBus.ReadErrorSignal()
 
         # Рукопожатие
-        self.handshake_init = AppBus.HandshakeInitSignal()
-        self.handshake_done = AppBus.HandshakeDoneSignal()
-        self.handshake_failed = AppBus.HandshakeFailedSignal()
+        self.handshake_init = McBus.HandshakeInitSignal()
+        self.handshake_done = McBus.HandshakeDoneSignal()
+        self.handshake_failed = McBus.HandshakeFailedSignal()
 
         # Heartbeat
-        self.heartbeat_sent = AppBus.HeartbeatSentSignal()
-        self.heartbeat_ack = AppBus.HeartbeatAckSignal()
-        self.device_lost = AppBus.DeviceLostSignal()
+        self.heartbeat_sent = McBus.HeartbeatSentSignal()
+        self.heartbeat_ack = McBus.HeartbeatAckSignal()
+        self.device_lost = McBus.DeviceLostSignal()
 
         # Подтверждение команд
-        self.command_sent = AppBus.CommandSentSignal()
-        self.command_ack = AppBus.CommandAckSignal()
-        self.command_ack_timeout = AppBus.CommandAckTimeoutSignal()
-        self.command_rejected = AppBus.CommandRejectedSignal()
+        self.command_sent = McBus.CommandSentSignal()
+        self.command_ack = McBus.CommandAckSignal()
+        self.command_ack_timeout = McBus.CommandAckTimeoutSignal()
+        self.command_rejected = McBus.CommandRejectedSignal()

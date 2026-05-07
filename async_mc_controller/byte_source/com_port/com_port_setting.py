@@ -1,20 +1,20 @@
 # System imports
-from typing import Optional
+from typing import Optional, TypeVar
 
 # External imports
 
 # User imports
 from async_mc_controller.config import config
 from async_mc_controller.utils import confirm_from_console
-from async_mc_controller.logger import app_logger
+from async_mc_controller.logger import LoggerProtocol, FooLogger
 from async_mc_controller.byte_source.bytes_source import AsyncBytesSource, AsyncBytesSourceFactory
 from async_mc_controller.byte_source.com_port import get_ComPorts
-from async_mc_controller.byte_source.com_port import AsyncComPortImu as AsyncComPort
+from async_mc_controller.byte_source.com_port import AsyncComPort
 
 
 #########################
 
-_logger = app_logger.get_logger('App.ComPort.ComPortSetting')
+T = TypeVar('T')    # Тип возвращаемого com_port (должен быть наследником AsyncComPort)
 
 # ------------------------------------------
 
@@ -40,10 +40,18 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
             byte = await source.read_byte()
     """
 
-    def __init__(self):
-        self._port_name: Optional[str]              = None
-        self._baudrate:  Optional[int]              = None
-        self._ports:     dict[str, dict[str, str]]  = get_ComPorts()   # Доступные COM-порты
+    def __init__(self, com_port_type: T = AsyncComPort, logger: LoggerProtocol = FooLogger):
+        if not issubclass(com_port_type, AsyncComPort):
+            raise TypeError(f"{type(com_port_type).__name__} не является наследником AsyncComPort")
+
+        self._com_port_type = com_port_type
+        self._logger = logger
+
+        self._port_name: Optional[str] = None
+        self._baudrate: Optional[int] = None
+
+        # Доступные COM-порты
+        self._ports: dict[str, dict[str, str]]  = get_ComPorts()
 
     def configure_source(self) -> None:
         """Собирает параметры COM-порта: из кэша конфига или через консоль.
@@ -65,7 +73,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
             AsyncBytesSource: Готовый к использованию асинхронный COM-порт.
         """
         if not self._port_name or not self._baudrate:
-            _logger.debug('Источник не настроен — ленивый вызов configure_source()')
+            self._logger.debug('Источник не настроен — ленивый вызов configure_source()')
             self.configure_source()
 
         # Обновляем глобальный конфиг
@@ -78,9 +86,9 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
         # Сохраняем изменения
         config.save()
 
-        _logger.debug(f'Создан AsyncComPort типа {AsyncComPort.__name__}: '
+        self._logger.debug(f'Создан AsyncComPort типа {AsyncComPort.__name__}: '
                       f'{self._port_name} ({self._baudrate} бод)')
-        return AsyncComPort(self._port_name, self._baudrate)
+        return self._com_port_type(self._port_name, self._baudrate, )
 
     def get_port_info(self):
         return self._port_name, self._baudrate
@@ -103,7 +111,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
             if confirm_from_console():
                 self._port_name = com_port_config.name
                 self._baudrate  = com_port_config.baudrate
-                _logger.debug(f'Используются сохранённые настройки порта: {self._port_name}')
+                self._logger.debug(f'Используются сохранённые настройки порта: {self._port_name}')
                 return
 
         self._load_comport_from_console()
@@ -114,7 +122,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
         port_list = list(self._ports.keys())
 
         if len(port_list) == 0:
-            _logger.error('Не найдено ни одного COM-порта')
+            self._logger.error('Не найдено ни одного COM-порта')
             print('# -----------------------------------------\n'
                   'Не найдено ни одного COM-порта!\n'
                   'Завершение программы...\n'
@@ -136,7 +144,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
             port_num  = int(input('Выберите номер порта: '))
             port_name = port_list[port_num - 1]
         except (ValueError, IndexError):
-            _logger.error('Неверный номер порта')
+            self._logger.error('Неверный номер порта')
             print('# -----------------------------------------\n'
                   'Неправильно выбран номер порта!\n'
                   'Завершение программы...\n'
@@ -154,7 +162,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
         try:
             port_baudrate = baudrate_list[int(input('\nВыберите скорость работы порта: ')) - 1]
         except (ValueError, IndexError):
-            _logger.error('Неверный номер скорости порта')
+            self._logger.error('Неверный номер скорости порта')
             print('# -----------------------------------------\n'
                   'Неправильно выбрана скорость работы порта!\n'
                   'Завершение программы...\n'
@@ -165,7 +173,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
         print(f'Выбран порт #{port_num}: {port_name}\n'
               f'Скорость работы порта: {port_baudrate}')
 
-        _logger.debug(f'Выбран порт: {port_name} ({port_baudrate} бод)')
+        self._logger.debug(f'Выбран порт: {port_name} ({port_baudrate} бод)')
 
         self._port_name = port_name
         self._baudrate  = port_baudrate

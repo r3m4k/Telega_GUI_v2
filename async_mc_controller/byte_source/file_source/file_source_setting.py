@@ -23,7 +23,7 @@ from async_mc_controller.byte_source.file_source.file_source import FileSource
 
 #########################
 
-_logger = app_logger.get_logger('App.FileSource')
+_logger = app_logger.getLogger('App.FileSource')
 
 # ------------------------------------------
 

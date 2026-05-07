@@ -25,7 +25,7 @@ from async_mc_controller.decoding.utils import bytes_to_uint32, bytes_to_triaxia
 
 #############################################
 
-_logger = app_logger.get_logger('App.BaseDecoder.ImuDecoder')
+_logger = app_logger.getLogger('App.BaseDecoder.ImuDecoder')
 
 # Тип сохранённого состояния автомата (см. ImuDecoder._save_state)
 SavedState: TypeAlias = tuple[

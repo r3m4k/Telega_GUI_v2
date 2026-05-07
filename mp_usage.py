@@ -8,7 +8,7 @@ from typing import Optional
 import numpy as np
 
 # User imports
-from async_mc_controller.byte_source.com_port import AsyncComPortSetting, AsyncComPortImu
+from async_mc_controller.byte_source.com_port import AsyncComPortSetting, AsyncComPortDevice
 from async_mc_controller.decoding.imu_decoding import ImuDecoder, ImuData
 from async_mc_controller.controller.mp_controller import MpController
 
@@ -17,7 +17,7 @@ from async_mc_controller.controller.mp_controller import MpController
 
 
 def run_in_subprocess(com_port_info, command_queue: mp.Queue, response_queue: mp.Queue) -> None:
-    com_port = AsyncComPortImu(*com_port_info)
+    com_port = AsyncComPortDevice(*com_port_info)
     decoder = ImuDecoder()
     controller = MpController(command_queue, response_queue)
 
@@ -40,7 +40,7 @@ class GuiProcess:
 
         self._stop_flag = False
 
-        self._com_port: Optional[AsyncComPortImu] = None
+        self._com_port: Optional[AsyncComPortDevice] = None
         self._reading_thread: Optional[Thread] = None
 
     def launch_mc(self):

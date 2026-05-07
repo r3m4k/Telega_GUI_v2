@@ -11,7 +11,7 @@ from async_mc_controller.byte_source.read_error import ReadError
 
 #########################
 
-_logger = app_logger.get_logger('App.Controller')
+_logger = app_logger.getLogger('App.Controller')
 
 # ------------------------------------------
 
