@@ -20,12 +20,9 @@ from typing import Any, Callable, Generic, Optional, TypeVar
 # External imports
 
 # User imports
-from async_mc_controller.logger import app_logger
-from async_mc_controller.signal_bus import bus
+from async_mc_controller.logger import LoggerProtocol, FooLogger
 
 #############################################
-
-_logger = app_logger.getLogger('App.BaseDecoder')
 
 T = TypeVar('T')   # Тип декодированного пакета данных
 
@@ -51,16 +48,9 @@ class BaseDecoder(ABC, Generic[T]):
 
     Параметр T задаёт тип декодированного пакета данных, хранящегося в _package_queue.
 
-    Взаимодействие с шиной:
-        - подписка: NEW_BYTE (входящий байт → _byte_queue);
-        - эмиссия:  PACKAGE_READY (готовый пакет) — из _package_emitting_loop.
-
-    Протоколо-специфичные сигналы (рукопожатие, heartbeat, ACK и т.п.)
-    обрабатываются в наследниках — по аналогии с AsyncComPort / AsyncComPortImu.
-
     Инфраструктура:
         _byte_queue:    входящие байты → _processing_loop
-        _package_queue: декодированные пакеты типа T → _package_emitting_loop
+        _package_queue: декодированные пакеты типа T → _package_sending
 
     Пример наследования:
         class MyDecoder(BaseDecoder[MyData]):
@@ -71,11 +61,19 @@ class BaseDecoder(ABC, Generic[T]):
                 # подписаться на свои протокольные сигналы, если нужно
 
             def _get_decode_func(self, fmt: bytes): ...
+
+            async def _package_sending(package: T): ...
     """
 
     _header: list[bytes]   # Заголовок посылки — определяется в наследнике
 
-    def __init__(self):
+    def __init__(self, logger: LoggerProtocol = FooLogger):
+
+        if self._header is None:
+            raise RuntimeError('Задайте заголовок посылке в наследнике BaseDecoder!')
+
+        self._base_decoder_logger: LoggerProtocol = logger  # Сохраним логгер
+
         self._byte_queue: asyncio.Queue[bytes] = asyncio.Queue()    # Очередь входящих байтов
         self._package_queue: asyncio.Queue[T] = asyncio.Queue()     # Очередь готовых пакетов
 
@@ -83,7 +81,7 @@ class BaseDecoder(ABC, Generic[T]):
         self._decode_func: Callable[[list[bytes]], Coroutine[Any, Any, None]] = self._default_decode_func
 
         self._stage: Stage = Stage.WantHeader   # Текущая стадия декодера
-        self._received_bytes: list[bytes] = []  # Буфер текущей посылки
+        self._received_bytes: list[bytes] = []  # Буфер полученных байтов
 
         self._data_bt_index: int = 0   # Индекс байта данных в посылке
         self._package_size:  int = 0   # Количество байт данных в посылке
@@ -95,8 +93,15 @@ class BaseDecoder(ABC, Generic[T]):
         self._processing_task: Optional[asyncio.Task] = None        # Задача обработки байтов
         self._package_emitting_task: Optional[asyncio.Task] = None  # Задача эмиссии пакетов
 
-        # Самостоятельная подписка на базовые сигналы шины
-        bus.new_byte.subscribe(self)
+    def __str__(self) -> str:
+        total = self._num_correct_packages + self._num_wrong_packages + self._num_unknown_packages
+        return (
+            f'🔍 Информация о {self.__class__.__name__}:\n'
+            f'| Количество корректно принятых пакетов данных:     {self._num_correct_packages} из {total}\n'
+            f'| Количество пакетов данных, полученных с ошибкой:  {self._num_wrong_packages} из {total}\n'
+            f'| Количество пакетов с неизвестным форматом:        {self._num_unknown_packages} из {total}\n'
+            f'| -----------------------------------------------\n'
+        )
 
     # =============================================================
     # ======= Методы для работы в контекстном менеджере ===========
@@ -105,14 +110,14 @@ class BaseDecoder(ABC, Generic[T]):
     async def __aenter__(self) -> 'BaseDecoder':
         """Сбрасывает состояние и запускает две фоновые задачи декодера."""
         self._reset()
-        _logger.debug('Запуск задач декодера')
+        self._base_decoder_logger.debug('Запуск задач декодера')
         self._processing_task = asyncio.create_task(self._processing_loop())
         self._package_emitting_task = asyncio.create_task(self._package_emitting_loop())
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Останавливает все фоновые задачи декодера."""
-        _logger.debug('Остановка задач декодера')
+        self._base_decoder_logger.debug('Остановка задач декодера')
         for task in (self._processing_task, self._package_emitting_task):
             if task is not None and not task.done():
                 task.cancel()
@@ -121,18 +126,6 @@ class BaseDecoder(ABC, Generic[T]):
                 except asyncio.CancelledError:
                     pass
         return False
-
-    # =============================================================
-    # =================== Обработчики сигналов ====================
-    # =============================================================
-
-    async def on_byte_received(self, bt: bytes) -> None:
-        """Обработчик сигнала NEW_BYTE — кладёт байт во внутреннюю очередь.
-
-        Args:
-            bt (bytes): Один полученный байт.
-        """
-        await self._byte_queue.put(bt)
 
     # =============================================================
     # ================= Абстрактные методы ========================
@@ -152,10 +145,137 @@ class BaseDecoder(ABC, Generic[T]):
             Callable или None если формат неизвестен.
         """
         ...
+    
+    @abstractmethod
+    async def _package_sending(self, data: T) -> None:
+        """Абстрактный метод для отправки декодированных пакетов данных.
+        Должен быть реализован в наследнике!
+        
+        Args:
+            data (T): Декодированный пакет данных.
+        """
+        ...
+
+    # =============================================================
+    # ========= Реализация конечного автомата для разбора =========
+    # ========= бинарного потока данных ===========================
+    # =============================================================
+    
+    async def _byte_processing(self, bt: bytes) -> None:
+        """Обработка одного байта конечным автоматом.
+
+        Args:
+            bt (bytes): Байт для обработки.
+        """
+        self._received_bytes.append(bt)
+
+        match self._stage:
+            case Stage.WantHeader:
+                if self._received_bytes[len(self._header):] == self._header:
+                    self._stage = Stage.WantFormat
+                    self._received_bytes = self._header.copy()
+                    self._data_bt_index = 0
+
+            case Stage.WantFormat:
+                decode_func = self._get_decode_func(bt)
+                if decode_func is not None:
+                    self._decode_func = decode_func
+                    self._stage = Stage.WantLength
+                else:
+                    self._stage = Stage.WantHeader
+                    self._num_unknown_packages += 1
+                    self._base_decoder_logger.warning(f'Неизвестный формат пакета: {bt}')
+
+            case Stage.WantLength:
+                self._package_size = int.from_bytes(bt, 'big')
+                self._stage = Stage.WantData
+
+            case Stage.WantData:
+                if self._data_bt_index < self._package_size - 1:
+                    self._data_bt_index += 1
+                else:
+                    self._stage = Stage.WantControlSum
+
+            case Stage.WantControlSum:
+                if bt == self._count_control_sum(self._received_bytes):
+                    await self._decode_func(self._received_bytes)
+                    self._num_correct_packages += 1
+                else:
+                    self._num_wrong_packages += 1
+                    self._base_decoder_logger.warning(
+                        f'Ошибка контрольной суммы пакета '
+                        f'#{self._num_correct_packages + self._num_wrong_packages}'
+                    )
+
+                self._stage = Stage.WantHeader
+                self._received_bytes = []
+                self._data_bt_index = 0
+            
+    @staticmethod
+    def _get_package_size(bt: bytes) -> int:
+        """ Метод для вычисления размера данных внутри полученного пакета.
+
+        По умолчанию просто преобразует полученный байт в целое число.
+
+        Метод может быть переопределён в наследнике под конкретный протокол. 
+        
+        Args:
+            bt (bytes): Байт, в котором закодирован размер данных внутри пакета.
+
+        Returns:
+            int: Вычисленный размер данных.
+        """
+        return int.from_bytes(bt, 'big')
+
+    @staticmethod
+    def _count_control_sum(data_bytes: list[bytes]) -> bytes:
+        """Вычисляет контрольную сумму пакета.
+        
+        По умолчанию используется обыкновенная сумма всех байтов посылки,
+        приведённая к байту.
+        
+        Метод может быть переопределён в наследнике под конкретный протокол. 
+        
+        Args:
+            data_bytes (list[bytes]): Список байтов всей посылки (включая CRC).
+
+        Returns:
+            bytes: Один байт — вычисленная контрольная сумма.
+        """
+        total = 0
+        for b in data_bytes[:-1]:
+            total += int.from_bytes(b, 'big')
+        return bytes([total & 0xFF])
 
     # =============================================================
     # ================= Внутренняя логика =========================
     # =============================================================
+
+    async def _default_decode_func(self, byte_list: list[bytes]) -> None:
+        """Заглушка по умолчанию для _decode_func до первого WantFormat."""
+        self._base_decoder_logger.warning(f'_decode_func не установлена, пакет проигнорирован: {byte_list}')
+    
+    async def _processing_loop(self) -> None:
+        """Фоновый цикл чтения байтов и обработки конечным автоматом."""
+        self._base_decoder_logger.debug('Запуск цикла обработки байтов')
+        try:
+            while True:
+                bt = await self._byte_queue.get()
+                await self._byte_processing(bt)
+        except asyncio.CancelledError:
+            self._base_decoder_logger.debug('Цикл обработки байтов остановлен')
+            raise   # TODO: разобраться, зачем тут raise
+
+    async def _package_emitting_loop(self) -> None:
+        """Фоновый цикл отправки пакетов из _package_queue."""
+        self._base_decoder_logger.debug('Запуск цикла отправки пакетов')
+        try:
+            while True:
+                data = await self._package_queue.get()
+                await self._package_sending(data)
+        except asyncio.CancelledError:
+            self._base_decoder_logger.debug('Цикл эмиссии пакетов остановлен')
+            raise
 
     def _clear(self) -> None:
         """Сбрасывает FSM, буфер посылки и счётчики.
@@ -180,7 +300,7 @@ class BaseDecoder(ABC, Generic[T]):
         self._num_wrong_packages   = 0
         self._num_unknown_packages = 0
 
-        _logger.debug('FSM и счётчики BaseDecoder сброшены')
+        self._base_decoder_logger.debug('FSM и счётчики BaseDecoder сброшены')
 
     def _reset(self) -> None:
         """Полный сброс состояния декодера: FSM, счётчики и очереди.
@@ -193,96 +313,4 @@ class BaseDecoder(ABC, Generic[T]):
         self._byte_queue = asyncio.Queue()
         self._package_queue = asyncio.Queue()
 
-        _logger.debug('Состояние BaseDecoder сброшено')
-
-    async def _processing_loop(self) -> None:
-        """Фоновый цикл чтения байтов и обработки конечным автоматом."""
-        _logger.debug('Запуск цикла обработки байтов')
-        try:
-            while True:
-                bt = await self._byte_queue.get()
-                await self._byte_processing(bt)
-        except asyncio.CancelledError:
-            _logger.debug('Цикл обработки байтов остановлен')
-            raise   # TODO: разобраться, зачем тут raise
-
-    async def _package_emitting_loop(self) -> None:
-        """Фоновый цикл эмиссии пакетов из _package_queue в шину."""
-        _logger.debug('Запуск цикла эмиссии пакетов')
-        try:
-            while True:
-                data = await self._package_queue.get()
-                await bus.package_ready.emit(data)
-                # _logger.debug(f'Пакет эмиттирован в шину')
-        except asyncio.CancelledError:
-            _logger.debug('Цикл эмиссии пакетов остановлен')
-            raise
-
-    async def _byte_processing(self, bt: bytes) -> None:
-        """Обработка одного байта конечным автоматом.
-
-        Args:
-            bt (bytes): Байт для обработки.
-        """
-        self._received_bytes.append(bt)
-
-        match self._stage:
-            case Stage.WantHeader:
-                if self._received_bytes[-2:] == self._header:
-                    self._stage = Stage.WantFormat
-                    self._received_bytes = self._header.copy()
-                    self._data_bt_index = 0
-
-            case Stage.WantFormat:
-                decode_func = self._get_decode_func(bt)
-                if decode_func is not None:
-                    self._decode_func = decode_func
-                    self._stage = Stage.WantLength
-                else:
-                    self._stage = Stage.WantHeader
-                    self._num_unknown_packages += 1
-                    _logger.warning(f'Неизвестный формат пакета: {bt}')
-
-            case Stage.WantLength:
-                self._package_size = int.from_bytes(bt, 'big')
-                self._stage = Stage.WantData
-
-            case Stage.WantData:
-                if self._data_bt_index < self._package_size - 1:
-                    self._data_bt_index += 1
-                else:
-                    self._stage = Stage.WantControlSum
-
-            case Stage.WantControlSum:
-                if bt == self._count_control_sum(self._received_bytes):
-                    await self._decode_func(self._received_bytes)
-                    self._num_correct_packages += 1
-                else:
-                    self._num_wrong_packages += 1
-                    _logger.warning(
-                        f'Ошибка контрольной суммы пакета '
-                        f'#{self._num_correct_packages + self._num_wrong_packages}'
-                    )
-
-                self._stage = Stage.WantHeader
-                self._received_bytes = []
-                self._data_bt_index = 0
-
-    @staticmethod
-    def _count_control_sum(data_bytes: list[bytes]) -> bytes:
-        """Вычисляет контрольную сумму пакета (сумма байтов без последнего).
-
-        Args:
-            data_bytes (list[bytes]): Список байтов всей посылки (включая CRC).
-
-        Returns:
-            bytes: Один байт — вычисленная контрольная сумма.
-        """
-        total = 0
-        for b in data_bytes[:-1]:
-            total += int.from_bytes(b, 'big')
-        return bytes([total & 0xFF])
-
-    async def _default_decode_func(self, byte_list: list[bytes]) -> None:
-        """Заглушка по умолчанию для _decode_func до первого WantFormat."""
-        _logger.warning(f'_decode_func не установлена, пакет проигнорирован: {byte_list}')
+        self._base_decoder_logger.debug('Состояние BaseDecoder сброшено')
