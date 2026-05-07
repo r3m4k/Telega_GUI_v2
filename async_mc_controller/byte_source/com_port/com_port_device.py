@@ -67,6 +67,7 @@ class AsyncComPortDevice(AsyncComPort):
         self._bus.heartbeat_ack.subscribe(self)
         self._bus.command_ack.subscribe(self)
         self._bus.command_rejected.subscribe(self)
+        self._bus.interrupt_measuring.subscribe(self)
 
     # =============================================================
     # ======= Методы для работы в контекстном менеджере ===========
@@ -117,6 +118,7 @@ class AsyncComPortDevice(AsyncComPort):
         self._bus.heartbeat_ack.unsubscribe(self)
         self._bus.command_ack.unsubscribe(self)
         self._bus.command_rejected.unsubscribe(self)
+        self._bus.interrupt_measuring.unsubscribe(self)
 
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
@@ -161,6 +163,34 @@ class AsyncComPortDevice(AsyncComPort):
         self._device_logger.debug(
             f'Ожидание ACK команды прервано по порту {self._port_name}: МК отверг команду'
         )
+
+    async def on_interrupt_measuring(self) -> None:
+        """Обработчик сигнала INTERRUPT_MEASURING.
+
+        Аварийная остановка: связь с МК нарушена, протокольное
+        взаимодействие невозможно.
+
+        Heartbeat останавливается через _cancel_task — CancelledError
+        чисто прервёт его внутренний wait_for, без ложного DEVICE_LOST.
+        Чтение прерывается при выходе из контекстного менеджера.
+
+        Идемпотентен: повторный вызов после уже выполненной остановки — no-op.
+        Это нужно для случая «штатная остановка → сбой команды → повторный
+        INTERRUPT_MEASURING из Controller.stop() или аналогичного метода»:
+        ресурсы уже освобождены, повторный проход тут не должен ничего ломать.
+        """
+        if self._stop_flag:
+            self._device_logger.debug(
+                f'INTERRUPT_MEASURING для порта {self._port_name} проигнорирован: '
+                f'остановка уже выполнена'
+            )
+            return
+
+        self._stop_flag = True
+        self._device_logger.warning(f'Аварийная остановка работы с портом {self._port_name}')
+        await self._cancel_task(self._heartbeat_task)
+        self._heartbeat_task = None
+        self._command_ack_event.set()
 
     # =============================================================
     # =================== Внутренняя логика =======================
