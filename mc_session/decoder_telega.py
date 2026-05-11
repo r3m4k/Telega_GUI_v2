@@ -10,9 +10,7 @@ from pathlib import Path
 from async_mc_controller.signal_bus import McBus
 from async_mc_controller.logger import McLogger
 from async_mc_controller.decoding import DeviceDecoder, TriaxialData
-from async_mc_controller.decoding import (
-    bytes_to_triaxial, bytes_to_float, bytes_to_int32, bytes_to_uint32, bytes_to_uint8
-)
+from async_mc_controller.decoding.utils import *
 
 #########################
 
@@ -67,7 +65,7 @@ class DecoderTelega(DeviceDecoder[TelegaData]):
     _end_of_static_init_msg: str = "END_OF_STATIC_INIT"     # Сообщение о завершение набора статического буфера
 
     # Константы форматов пакетов протокола
-    _DataFormatBt: bytes = b'\x01'       # Пакет с данными
+    _DataFormatBt: bytes = b'\xC8'       # Пакет с данными
     _MessageFormatBt: bytes = b'\xCD'    # Текстовое сообщение
 
     def __init__(self, signal_bus: McBus, mc_logger: McLogger):
