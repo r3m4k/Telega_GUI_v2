@@ -65,7 +65,8 @@ class BaseDecoder(ABC, Generic[T]):
             async def _package_sending(package: T): ...
     """
 
-    _header: list[bytes]   # Заголовок посылки — определяется в наследнике
+    # Заголовок посылки — определяется в наследнике
+    _header: Optional[list[bytes]] = None
 
     def __init__(self, logger: LoggerProtocol = FooLogger):
 
@@ -187,7 +188,7 @@ class BaseDecoder(ABC, Generic[T]):
                     self._base_decoder_logger.warning(f'Неизвестный формат пакета: {bt}')
 
             case Stage.WantLength:
-                self._package_size = int.from_bytes(bt, 'big')
+                self._package_size = self._get_package_size(bt)
                 self._stage = Stage.WantData
 
             case Stage.WantData:
@@ -264,7 +265,7 @@ class BaseDecoder(ABC, Generic[T]):
                 await self._byte_processing(bt)
         except asyncio.CancelledError:
             self._base_decoder_logger.debug('Цикл обработки байтов остановлен')
-            raise   # TODO: разобраться, зачем тут raise
+            # raise   # TODO: разобраться, зачем тут raise
 
     async def _package_emitting_loop(self) -> None:
         """Фоновый цикл отправки пакетов из _package_queue."""

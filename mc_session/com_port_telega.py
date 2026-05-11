@@ -16,6 +16,8 @@ class ComPortTelega(AsyncComPortDevice):
     _handshake_req_command: bytes = PacketBuilderTelegaText.build_text_command('HANDSHAKE_ACK')
     _heartbeat_req_command: bytes = PacketBuilderTelegaText.build_text_command('HEARTBEAT_ACK')
 
+    _restart_command: bytes = PacketBuilderTelegaBytes.build_byte_command(bytes([0xFF, 0xFF]))
+
     _set_foo_stage_command:         bytes = PacketBuilderTelegaBytes.build_byte_command(bytes([0xAA, 0x00]))
     _set_calibration_stage_command: bytes = PacketBuilderTelegaBytes.build_byte_command(bytes([0xAA, 0x01]))
     _set_measure_stage_command:     bytes = PacketBuilderTelegaBytes.build_byte_command(bytes([0xAA, 0x02]))

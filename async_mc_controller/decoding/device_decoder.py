@@ -6,14 +6,14 @@
 для протокола IMU, унаследованную от BaseDecoder.
 
 Классы:
-    PackageFormat:  Константы форматов пакетов протокола IMU.
-    ImuDecoder:     Декодер протокола IMU.
+    PackageFormat: Константы форматов пакетов протокола IMU.
+    DeviceDecoder: Декодер для работы с МК с помощью сигнальной шины.
 """
 
 # System imports
 from abc import abstractmethod
 from collections.abc import Coroutine
-from typing import Any, Callable, Optional, TypeAlias
+from typing import Any, Callable, Optional, TypeAlias, Awaitable
 
 # External imports
 
@@ -46,17 +46,17 @@ class DeviceDecoder(BaseDecoder[T]):
     """
 
     # Получаемые текстовые сообщения от МК
-    _handshake_ack: str           # Ожидаемое сообщение рукопожатия
-    _heartbeat_ack: str           # Ожидаемое сообщение heartbeat
-    _command_ack: str             # Ожидаемое подтверждение команды
-    _command_rejected_msg: str    # Отказ МК: команда не распознана
+    _handshake_ack: Optional[str] = None           # Ожидаемое сообщение рукопожатия
+    _heartbeat_ack: Optional[str] = None           # Ожидаемое сообщение heartbeat
+    _command_ack: Optional[str] = None             # Ожидаемое подтверждение команды
+    _command_rejected_msg: Optional[str] = None    # Отказ МК: команда не распознана
 
     # Константы форматов пакетов протокола
-    _DataFormatBt: bytes       # Пакет с данными
-    _MessageFormatBt: bytes    # Текстовое сообщение
+    _DataFormatBt: Optional[bytes] = None       # Пакет с данными
+    _MessageFormatBt: Optional[bytes] = None    # Текстовое сообщение
 
     def __init__(self, signal_bus: McBus, mc_logger: McLogger):
-        super().__init__()
+        super().__init__(logger=mc_logger.get_child_logger("BaseDecoder"))
 
         # Проверим текстовые сообщения
         if any(msg is None for msg in [self._handshake_ack, self._heartbeat_ack,
@@ -80,17 +80,14 @@ class DeviceDecoder(BaseDecoder[T]):
 
         # Словарь для соответствия полученного сообщения и методом для отработки.
         # Может быть расширен в наследнике!
-        self._msg_to_handler: dict[str, Coroutine[Any, Any, None]] = {
-            self._handshake_ack: self._handshake_ack_handler(),
-            self._heartbeat_ack: self._heartbeat_ack_handler(),
-            self._command_ack: self._command_ack_handler(),
-            self._command_rejected_msg: self._command_rejected_msg_handler(),
+        self._msg_to_handler: dict[str, Callable[[], Awaitable[None]]] = {
+            self._handshake_ack: self._handshake_ack_handler,
+            self._heartbeat_ack: self._heartbeat_ack_handler,
+            self._command_ack: self._command_ack_handler,
+            self._command_rejected_msg: self._command_rejected_msg_handler,
         }
 
-        # Зададим логгеры
-        self._base_decoder_logger = mc_logger.get_child_logger("BaseDecoder")
         self._device_decoder_logger = mc_logger.get_child_logger("BaseDecoder.DeviceDecoder")
-
         self._bus: McBus = signal_bus       # Используемая сигнальная шина
         self.received_data: list[T] = []    # Список полученных пакетов данных
 
@@ -103,6 +100,20 @@ class DeviceDecoder(BaseDecoder[T]):
         self._bus.heartbeat_sent.subscribe(self)
         self._bus.command_sent.subscribe(self)
         self._bus.command_ack_timeout.subscribe(self)
+
+    # =============================================================
+    # ======= Методы для работы в контекстном менеджере ===========
+    # =============================================================
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Отпишемся от всех сигналов шины."""
+        self._bus.new_byte.unsubscribe(self)
+        self._bus.handshake_init.unsubscribe(self)
+        self._bus.heartbeat_sent.unsubscribe(self)
+        self._bus.command_sent.unsubscribe(self)
+        self._bus.command_ack_timeout.unsubscribe(self)
+
+        return await super().__aexit__(exc_type, exc_val, exc_tb)
 
     # =============================================================
     # =================== Обработчики сигналов ====================
@@ -174,7 +185,7 @@ class DeviceDecoder(BaseDecoder[T]):
         await self._bus.package_ready.emit(data)
 
     def _clear(self) -> None:
-        """Очищает состояние ImuDecoder.
+        """Очищает состояние DeviceDecoder.
 
         Расширяет BaseDecoder._clear() очисткой received_data и _saved_state.
         Используется list.clear() вместо переприсваивания, чтобы внешние
@@ -189,7 +200,7 @@ class DeviceDecoder(BaseDecoder[T]):
         super()._clear()
         self.received_data.clear()
         self._saved_state = None
-        self._device_decoder_logger.debug('Состояние ImuDecoder очищено')
+        self._device_decoder_logger.debug('Состояние DeviceDecoder очищено')
 
     def _get_decode_func(self, fmt: bytes) -> Optional[Callable[[list[bytes]], Coroutine[Any, Any, None]]]:
         """Возвращает функцию декодирования по байту формата пакета.
@@ -238,7 +249,8 @@ class DeviceDecoder(BaseDecoder[T]):
             return
 
         if message in self._msg_to_handler.keys():
-            await self._msg_to_handler[message]
+            coro_handler = self._msg_to_handler[message]
+            await coro_handler()
         else:
             self._device_decoder_logger.warning(f'Неизвестное сообщение от МК: "{message}"')
 
