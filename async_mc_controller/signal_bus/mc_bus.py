@@ -1,12 +1,12 @@
 # System imports
 import logging
 import sys
-from typing import Any
+from typing import Any, Optional
 
 # External imports
 
 # User imports
-from async_mc_controller.logger import app_logger
+from async_mc_controller.logger import McLogger
 from async_mc_controller.config import config
 from .signals import Signals
 from .signal_bus import SignalBus
@@ -16,7 +16,9 @@ from .subscribers import (
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
     StartCalibrationSubscriber,
+    StopCalibrationSubscriber,
     StartStaticInitSubscriber,
+    StopStaticInitSubscriber,
     InterruptMeasuringSubscriber,
     ReadErrorSubscriber,
     HandshakeInitSubscriber,
@@ -34,33 +36,6 @@ from .subscribers import (
 from async_mc_controller.byte_source.read_error import ReadError
 
 #########################
-
-_logger = app_logger.getLogger('App.Bus')
-
-# Сигналы, эмиссия которых логируется на уровне DEBUG.
-# Высокочастотные сигналы (NEW_BYTE, PACKAGE_READY) намеренно исключены.
-_logged_signals: set[Signals] = {
-    Signals.START_MEASURING,
-    Signals.STOP_MEASURING,
-    Signals.START_CALIBRATION,
-    Signals.START_STATIC_INIT,
-    Signals.INTERRUPT_MEASURING,
-    Signals.READ_ERROR,
-    Signals.HANDSHAKE_INIT,
-    Signals.HANDSHAKE_DONE,
-    Signals.HANDSHAKE_FAILED,
-    Signals.HEARTBEAT_SENT,
-    Signals.HEARTBEAT_ACK,
-    Signals.DEVICE_LOST,
-    Signals.COMMAND_SENT,
-    Signals.COMMAND_ACK,
-    Signals.COMMAND_ACK_TIMEOUT,
-    Signals.COMMAND_REJECTED,
-}
-
-
-# ------------------------------------------
-
 
 class McBus:
     """Типизированная обёртка над SignalBus для конкретного приложения.
@@ -81,7 +56,32 @@ class McBus:
     """
 
     _signal_bus: SignalBus = SignalBus()
-    
+
+    _logger: Optional[logging.Logger] = None
+
+    # Сигналы, эмиссия которых логируется на уровне DEBUG.
+    # Высокочастотные сигналы (NEW_BYTE, PACKAGE_READY) намеренно исключены.
+    _logged_signals: set[Signals] = {
+        Signals.START_MEASURING,
+        Signals.STOP_MEASURING,
+        Signals.START_CALIBRATION,
+        Signals.START_STATIC_INIT,
+        Signals.STOP_CALIBRATION,
+        Signals.STOP_STATIC_INIT,
+        Signals.INTERRUPT_MEASURING,
+        Signals.READ_ERROR,
+        Signals.HANDSHAKE_INIT,
+        Signals.HANDSHAKE_DONE,
+        Signals.HANDSHAKE_FAILED,
+        Signals.HEARTBEAT_SENT,
+        Signals.HEARTBEAT_ACK,
+        Signals.DEVICE_LOST,
+        Signals.COMMAND_SENT,
+        Signals.COMMAND_ACK,
+        Signals.COMMAND_ACK_TIMEOUT,
+        Signals.COMMAND_REJECTED,
+    }
+
     @staticmethod
     async def _emit(signal: Signals, *args: Any, **kwargs: Any) -> None:
         """Внутренняя обёртка над _signal_bus.emit с опциональным логированием.
@@ -91,11 +91,11 @@ class McBus:
         через sys._getframe() — только при необходимости логирования.
         Используется всеми дескрипторами McBus вместо прямого вызова _signal_bus.emit.
         """
-        if signal in _logged_signals and config.logger_config.log_level == logging.DEBUG:
+        if signal in McBus._logged_signals and config.logger_config.log_level == logging.DEBUG:
             frame  = sys._getframe(2)   # 0=_emit, 1=дескриптор emit, 2=реальный вызывающий код
             caller = frame.f_locals.get('self', None)
             sender = type(caller).__name__ if caller else frame.f_code.co_name
-            _logger.debug(f'[{sender}] → {signal.value}')
+            McBus._logger.debug(f'[{sender}] → {signal.value}')
         await McBus._signal_bus.emit(signal, *args, **kwargs)
 
 
@@ -190,6 +190,23 @@ class McBus:
 
     # ------------------------------------------
 
+    class StopCalibrationSignal:
+        """Эмиттится контроллером при завершении калибровки датчиков."""
+
+        @staticmethod
+        def subscribe(subscriber: StopCalibrationSubscriber) -> None:
+            McBus._signal_bus.subscribe(Signals.STOP_CALIBRATION, subscriber.on_stop_calibration)
+
+        @staticmethod
+        def unsubscribe(subscriber: StopCalibrationSubscriber) -> None:
+            McBus._signal_bus.unsubscribe(Signals.STOP_CALIBRATION, subscriber.on_stop_calibration)
+
+        @staticmethod
+        async def emit() -> None:
+            await McBus._emit(Signals.STOP_CALIBRATION)
+
+    # ------------------------------------------
+
     class StartStaticInitSignal:
         """Эмиттится контроллером для запуска сбора статического буфера."""
 
@@ -204,6 +221,23 @@ class McBus:
         @staticmethod
         async def emit() -> None:
             await McBus._emit(Signals.START_STATIC_INIT)
+
+    # ------------------------------------------
+
+    class StopStaticInitSignal:
+        """Эмиттится контроллером при завершении сбора статического буфера."""
+
+        @staticmethod
+        def subscribe(subscriber: StopStaticInitSubscriber) -> None:
+            McBus._signal_bus.subscribe(Signals.STOP_STATIC_INIT, subscriber.on_stop_static_init)
+
+        @staticmethod
+        def unsubscribe(subscriber: StopStaticInitSubscriber) -> None:
+            McBus._signal_bus.unsubscribe(Signals.STOP_STATIC_INIT, subscriber.on_stop_static_init)
+
+        @staticmethod
+        async def emit() -> None:
+            await McBus._emit(Signals.STOP_STATIC_INIT)
 
     # ------------------------------------------
 
@@ -451,7 +485,9 @@ class McBus:
 
     # =============================================================
 
-    def __init__(self):
+    def __init__(self, mc_logger: McLogger):
+        McBus._logger = mc_logger.get_child_logger("McBus")
+
         # Передача данных
         self.new_byte = McBus.NewByteSignal()
         self.package_ready = McBus.PackageReadySignal()
@@ -462,6 +498,8 @@ class McBus:
         self.interrupt_measuring = McBus.InterruptMeasuringSignal()
         self.start_calibration = McBus.StartCalibrationSignal()
         self.start_static_init = McBus.StartStaticInitSignal()
+        self.stop_calibration = McBus.StopCalibrationSignal()
+        self.stop_static_init = McBus.StopStaticInitSignal()
 
         # Ошибки чтения
         self.read_error = McBus.ReadErrorSignal()

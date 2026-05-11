@@ -94,7 +94,7 @@ class StartCalibrationSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.START_CALIBRATION.
 
     Любой объект, реализующий метод on_start_calibration, может быть
-    передан в McBus.stop_measuring.subscribe().
+    передан в McBus.start_calibration.subscribe().
 
     Пример реализации:
         class ComPortTelega:
@@ -106,11 +106,27 @@ class StartCalibrationSubscriber(Protocol):
 
 # ------------------------------------------
 
+class StopCalibrationSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.STOP_CALIBRATION.
+
+    Любой объект, реализующий метод on_stop_calibration, может быть
+    передан в McBus.stop_calibration.subscribe().
+
+    Пример реализации:
+        class ComPortTelega:
+            async def on_stop_calibration(self) -> None:
+                self._telega_mc_logger.debug('Завершение калибровки')
+                await self._send_command_with_ack(self._set_foo_stage_command)
+    """
+    async def on_stop_calibration(self) -> None: ...
+
+# ------------------------------------------
+
 class StartStaticInitSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.START_STATIC_INIT.
 
     Любой объект, реализующий метод on_start_static_init, может быть
-    передан в McBus.stop_measuring.subscribe().
+    передан в McBus.start_static_init.subscribe().
 
     Пример реализации:
         class ComPortTelega:
@@ -119,6 +135,22 @@ class StartStaticInitSubscriber(Protocol):
                 await self._send_command_with_ack(self._set_static_init_stage_command)
     """
     async def on_start_static_init(self) -> None: ...
+
+# ------------------------------------------
+
+class StopStaticInitSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.STOP_STATIC_INIT.
+
+    Любой объект, реализующий метод on_stop_static_init, может быть
+    передан в McBus.stop_static_init.subscribe().
+
+    Пример реализации:
+        class ComPortTelega:
+            async def on_stop_static_init(self) -> None:
+                self._telega_mc_logger.debug('Завершение набора статического буфера')
+                await self._send_command_with_ack(self._set_foo_stage_command)
+    """
+    async def on_stop_static_init(self) -> None: ...
 
 # ------------------------------------------
 
