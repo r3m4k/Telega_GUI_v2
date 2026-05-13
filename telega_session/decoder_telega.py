@@ -168,10 +168,8 @@ class DecoderTelega(DeviceDecoder[TelegaData]):
 
     async def _end_of_calibration(self) -> None:
         """ Процедура завершения калибровки """
-        # TODO: перенести в контроллер
-        ...
+        await self._bus.stop_calibration.emit()
 
     async def _end_of_static_init(self) -> None:
         """ Процедура завершения набора статического буфера перед проездом """
-        # TODO: перенести в контроллер
-        ...
+        await self._bus.stop_static_init.emit()

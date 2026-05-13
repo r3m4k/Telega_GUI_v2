@@ -16,7 +16,6 @@ from async_mc_controller.controller.controller import Controller
 # Количество пакетов данных для сбора
 N = 5000
 
-
 async def main() -> None:
 
     # app_logger.set_log_level(logging.DEBUG)
@@ -45,8 +44,6 @@ async def main() -> None:
         await controller.stop_measuring()
 
     print(decoder)
-
-
 
 
 if __name__ == '__main__':

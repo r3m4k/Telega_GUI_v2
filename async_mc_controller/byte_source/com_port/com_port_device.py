@@ -62,26 +62,59 @@ class AsyncComPortDevice(AsyncComPort):
         self._heartbeat_task: Optional[asyncio.Task] = None     # Задача heartbeat loop
         self._stop_flag: bool = False     # Флаг «остановка уже выполнена»
 
-        # Самостоятельная подписка на события шины
-        self._bus.handshake_done.subscribe(self)
-        self._bus.heartbeat_ack.subscribe(self)
-        self._bus.command_ack.subscribe(self)
-        self._bus.command_rejected.subscribe(self)
-        self._bus.interrupt_measuring.subscribe(self)
 
     # =============================================================
     # ======= Методы для работы в контекстном менеджере ===========
     # =============================================================
 
     async def __aenter__(self) -> 'AsyncComPortDevice':
-        """
-        Вызов AsyncComPort.__aenter__ для запуска чтения данных порта
-        и инициализация рукопожатия.
+        """ Вызов родительского __aenter__, самостоятельная
+        подписка на события шины и выполнение процедуры рукопожатия
         """
         await super().__aenter__()
 
+        # Самостоятельная подписка на сигналы шины
+        self._bus.handshake_init.subscribe(self)
+        self._bus.handshake_done.subscribe(self)
+        self._bus.heartbeat_ack.subscribe(self)
+        self._bus.command_ack.subscribe(self)
+        self._bus.command_rejected.subscribe(self)
+        self._bus.interrupt_measuring.subscribe(self)
+
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """
+        Выставление флага self._stopped в True, завершение _heartbeat_task и
+        вызов AsyncComPort.__aexit__ для остановки чтения порта.
+        """
+        # Выставим флаг остановки и отменим _heartbeat_task
+        self._stop_flag = True
+        await self._cancel_task(self._heartbeat_task)
+        self._heartbeat_task = None
+
+        # Отпишемся от событий шины
+        self._bus.handshake_init.unsubscribe(self)
+        self._bus.handshake_done.unsubscribe(self)
+        self._bus.heartbeat_ack.unsubscribe(self)
+        self._bus.command_ack.unsubscribe(self)
+        self._bus.command_rejected.unsubscribe(self)
+        self._bus.interrupt_measuring.unsubscribe(self)
+
+        await super().__aexit__(exc_type, exc_val, exc_tb)
+
+        return False
+
+    # =============================================================
+    # =================== Обработчики сигналов ====================
+    # =============================================================
+
+    async def on_handshake_init(self) -> None:
+        """Обработчик сигнала HANDSHAKE_INIT от контроллера.
+
+        Инициирует процедуру рукопожатия.
+        """
         self._device_logger.debug(f'Инициализация рукопожатия по порту {self._port_name}')
-        await self._bus.handshake_init.emit()
         await self._send_command(self._handshake_req_command)
 
         self._handshake_ack_event.clear()
@@ -101,32 +134,6 @@ class AsyncComPortDevice(AsyncComPort):
             )
             await self._bus.handshake_failed.emit()
 
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
-        """
-        Выставление флага self._stopped в True, завершение _heartbeat_task и
-        вызов AsyncComPort.__aexit__ для остановки чтения порта.
-        """
-        # Выставим флаг остановки и отменим _heartbeat_task
-        self._stop_flag = True
-        await self._cancel_task(self._heartbeat_task)
-        self._heartbeat_task = None
-
-        # Отпишемся от событий шины
-        self._bus.handshake_done.unsubscribe(self)
-        self._bus.heartbeat_ack.unsubscribe(self)
-        self._bus.command_ack.unsubscribe(self)
-        self._bus.command_rejected.unsubscribe(self)
-        self._bus.interrupt_measuring.unsubscribe(self)
-
-        await super().__aexit__(exc_type, exc_val, exc_tb)
-
-        return False
-
-    # =============================================================
-    # =================== Обработчики сигналов ====================
-    # =============================================================
 
     async def on_handshake_done(self) -> None:
         """Обработчик сигнала HANDSHAKE_DONE от декодера.

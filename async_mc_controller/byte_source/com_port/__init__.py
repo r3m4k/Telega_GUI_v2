@@ -12,7 +12,7 @@ from async_mc_controller.byte_source.com_port.com_port import AsyncComPort
 from async_mc_controller.byte_source.com_port.com_port_device import AsyncComPortDevice
 from async_mc_controller.byte_source.com_port.com_port_error import ComPortReadError
 from async_mc_controller.byte_source.com_port.com_port_setting import AsyncComPortSetting
-from mc_session.packet_builders import (
+from telega_session.packet_builders import (
     BasePacketBuilder,
     PacketBuilderTelega,
     PacketBuilderTelegaText,
