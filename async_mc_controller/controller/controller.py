@@ -83,6 +83,7 @@ class Controller(ABC):
                     self._controller_logger.warning("Выставлен флаг _force_stop! "
                                                     "Эмитирование сигнала INTERRUPT_MEASURING...")
                     await self._bus.interrupt_measuring.emit()
+                    return
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
             self._controller_logger.debug("Таска для отслеживания _force_stop отменена")

@@ -18,7 +18,8 @@ from telega_session import ComPortTelega, DecoderTelega, ControllerTelega
 async def main() -> None:
     # Настроим конфигурацию
     mc_config = McConfig.load(config_path)
-    mc_config.logger_config.log_level = logging.DEBUG
+    # mc_config.logger_config.log_level = logging.DEBUG
+    mc_config.logger_config.log_level = logging.INFO
     mc_config.logger_config.log_filename = 'telega_mc_logger.log'
 
     # Создадим необходимые экземпляры
@@ -34,9 +35,13 @@ async def main() -> None:
     controller: ControllerTelega = ControllerTelega(bus, mc_logger)
 
     # ------------------------------------------
-    # Запуск
+    # Запуск работы с МК.
+    # Порядок вызова __aenter__ и __aexit__ важен,
+    # поэтому стоит использовать McSession!
     # ------------------------------------------
     async with McSession(decoder, com_port, controller):
+        mc_logger.debug(pformat(bus.get_subscribers()))
+
         await controller.run_measuring_pipeline()
 
     print(decoder)

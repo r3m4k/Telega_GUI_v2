@@ -134,7 +134,6 @@ class AsyncComPortDevice(AsyncComPort):
             )
             await self._bus.handshake_failed.emit()
 
-
     async def on_handshake_done(self) -> None:
         """Обработчик сигнала HANDSHAKE_DONE от декодера.
 

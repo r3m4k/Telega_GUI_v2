@@ -41,9 +41,9 @@ class McSession:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         # Вызовем __aexit__ для декодера, com порта и контроллера
+        await self.controller.__aexit__(exc_type, exc_val, exc_tb)
         await self.byte_source.__aexit__(exc_type, exc_val, exc_tb)
         await self.decoding.__aexit__(exc_type, exc_val, exc_tb)
-        await self.controller.__aexit__(exc_type, exc_val, exc_tb)
 
         return False
 

@@ -212,7 +212,7 @@ class DeviceDecoder(BaseDecoder[T]):
         Returns:
             Callable или None если формат неизвестен.
         """
-        self._device_decoder_logger.debug(f'Получен байт формата посылки: fmt = {fmt}')
+        # self._device_decoder_logger.debug(f'Получен байт формата посылки: fmt = {fmt}')
         if fmt in self._fmt_to_decode_func.keys():
             return self._fmt_to_decode_func[fmt]
         return None

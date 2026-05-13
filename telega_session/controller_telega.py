@@ -90,6 +90,7 @@ class ControllerTelega(Controller):
         """ Самостоятельная подписка на специфичные события шины """
         await super().__aenter__()
 
+        self._bus.handshake_done.subscribe(self)
         self._bus.stop_calibration.subscribe(self)
         self._bus.stop_static_init.subscribe(self)
         self._bus.interrupt_measuring.subscribe(self)
@@ -99,15 +100,20 @@ class ControllerTelega(Controller):
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         """ Отписка от специфичных сигналов шины """
 
+        self._bus.handshake_done.unsubscribe(self)
         self._bus.stop_calibration.unsubscribe(self)
         self._bus.stop_static_init.unsubscribe(self)
         self._bus.interrupt_measuring.unsubscribe(self)
-
 
         await self._cancel_task(self._measuring_pipeline_task)
 
         if self._telega_status_code == TelegaStatusCode.SUCCESS:
             self._telega_controller_logger.debug(
+                f'\nКод завершения работы с устройством: {self._telega_status_code}\n'
+                f'// {self._telega_status_code_messages[self._telega_status_code]}'
+            )
+        else:
+            self._telega_controller_logger.error(
                 f'\nКод завершения работы с устройством: {self._telega_status_code}\n'
                 f'// {self._telega_status_code_messages[self._telega_status_code]}'
             )
@@ -124,6 +130,8 @@ class ControllerTelega(Controller):
         try:
             await self._measuring_pipeline_task
             self._telega_controller_logger.debug("Пайплайн измерений завершён")
+            self._telega_controller_logger.info("Завершение чтения данных через INTERRUPT_MEASURING")
+            await self._bus.interrupt_measuring.emit()
 
         except Exception as e:
             self._telega_controller_logger.exception(f"Ошибка пайплайне измерений: {e}")
@@ -154,38 +162,40 @@ class ControllerTelega(Controller):
 
     async def _measuring_pipeline(self) -> None:
         """ Последовательный запуск всех этапов для сбора данных """
-        self._telega_controller_logger.debug("Запуск _measuring_pipeline")
+        self._telega_controller_logger.info("Запуск _measuring_pipeline")
         
         try:
             # 1. Рукопожатие
             self._handshake_done_event.clear()
             await self._bus.handshake_init.emit()
             await self._handshake_done_event.wait()
-            self._telega_controller_logger.debug("Процедура рукопожатия выполнена")
+            self._telega_controller_logger.info("Процедура рукопожатия выполнена")
 
             # 2. Запуск калибровки датчиков
+            self._telega_controller_logger.info("Начало калибровки")
             self._calibration_done_event.clear()
             await self.start_calibration()
             await self._calibration_done_event.wait()
-            self._telega_controller_logger.debug("Калибровка завершена")
+            self._telega_controller_logger.info("Калибровка завершена")
 
             # 3. Запуск набора статического буфера
+            self._telega_controller_logger.info("Начало набора статического буфера")
             self._static_init_done_event.clear()
             await self.start_static_init()
             await self._static_init_done_event.wait()
-            self._telega_controller_logger.debug("Набор статического буфера завершён")
+            self._telega_controller_logger.info("Набор статического буфера завершён")
 
             # 4. Запуск измерений
             await self._bus.start_measuring.emit()
-            self._telega_controller_logger.debug("Начало сбора данных")
+            self._telega_controller_logger.info("Начало сбора данных")
             await asyncio.sleep(10)
 
             # 5. Завершение измерений
             await self._bus.stop_measuring.emit()
-            self._telega_controller_logger.debug("Сбор данных завершён")
+            self._telega_controller_logger.info("Сбор данных завершён")
 
         except asyncio.CancelledError:
-            self._telega_controller_logger.debug(f'_measuring_pipeline остановлен!')
+            self._telega_controller_logger.info(f'_measuring_pipeline остановлен!')
             raise
 
     # =============================================================
@@ -204,7 +214,9 @@ class ControllerTelega(Controller):
             data: Объект с атрибутом `package_num`.
         """
         try:
-            print(f'\rПринят пакет #{data.package_num}', end='', flush=True)
+            # print(f'\rПринят пакет #{data.package_num}', end='', flush=True)
+            # self._telega_controller_logger.info(f'Принят пакет #{data.package_num}')
+            ...
         except AttributeError:
             self._telega_controller_logger.error(
                 f"Полученный пакет данных типа {type(data)} не имеет поле package_num!"
