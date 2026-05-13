@@ -56,9 +56,9 @@ class DecoderTelega(DeviceDecoder[TelegaData]):
     _header = [b'\x7e', b'\xe7']
 
     # Получаемые текстовые сообщения от МК
-    _handshake_ack: str = "CONFIRM_RECEIVED_COMMAND"    # Ожидаемое сообщение рукопожатия
+    _handshake_ack: str = "TELEGA_STM32_ACK"            # Ожидаемое сообщение рукопожатия
     _heartbeat_ack: str = "TELEGA_STM32_ALIVE"          # Ожидаемое сообщение heartbeat
-    _command_ack: str = "TELEGA_STM32_ACK"              # Ожидаемое подтверждение команды
+    _command_ack: str = "CONFIRM_RECEIVED_COMMAND"      # Ожидаемое подтверждение команды
     _command_rejected_msg: str = "UNKNOWN_COMMAND"      # Отказ МК: команда не распознана
 
     _end_of_calibration_msg: str = "END_OF_CALIBRATION"     # Сообщение о завершение калибровки

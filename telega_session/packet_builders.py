@@ -109,7 +109,7 @@ class PacketBuilderTelega(BasePacketBuilder):
     """
 
     # Заголовок протокола (общий для всех наследников)
-    _HEADER: bytes = bytes([0xC8, 0x8C])
+    _HEADER: bytes = bytes([0xE7, 0x7E])
 
     @classmethod
     @abstractmethod

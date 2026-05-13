@@ -317,11 +317,11 @@ class AsyncComPortDevice(AsyncComPort):
 
         Эмитирование сигнала new_byte.
         """
-        self._bus.new_byte.emit(bt)
+        await self._bus.new_byte.emit(bt)
 
     async def read_error_callback(self, err: ComPortReadError) -> None:
         """Отработка ошибки чтения данных из порта.
 
         Эмитирование сигнала read_error.
         """
-        self._bus.read_error.emit(err)
+        await self._bus.read_error.emit(err)

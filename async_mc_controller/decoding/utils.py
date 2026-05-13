@@ -12,7 +12,7 @@ import struct
 # External imports
 
 # User imports
-from async_mc_controller.decoding.imu_decoding.imu_data_description import TriaxialData
+from async_mc_controller.decoding.common_data_description import TriaxialData
 
 #############################################
 

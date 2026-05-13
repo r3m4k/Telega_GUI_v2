@@ -169,10 +169,11 @@ class BaseDecoder(ABC, Generic[T]):
             bt (bytes): Байт для обработки.
         """
         self._received_bytes.append(bt)
+        # self._base_decoder_logger.debug(f'stage = {self._stage}, bt = {bt}')
 
         match self._stage:
             case Stage.WantHeader:
-                if self._received_bytes[len(self._header):] == self._header:
+                if self._received_bytes[-len(self._header):] == self._header:
                     self._stage = Stage.WantFormat
                     self._received_bytes = self._header.copy()
                     self._data_bt_index = 0

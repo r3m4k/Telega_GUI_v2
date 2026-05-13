@@ -126,6 +126,7 @@ class DeviceDecoder(BaseDecoder[T]):
             bt (bytes): Один полученный байт.
         """
         await self._byte_queue.put(bt)
+        # self._device_decoder_logger.debug(f'Получен новый байт: bt = {bt}')
 
     async def on_handshake_init(self) -> None:
         """Обработчик сигнала HANDSHAKE_INIT — чистит состояние FSM.
@@ -211,6 +212,7 @@ class DeviceDecoder(BaseDecoder[T]):
         Returns:
             Callable или None если формат неизвестен.
         """
+        self._device_decoder_logger.debug(f'Получен байт формата посылки: fmt = {fmt}')
         if fmt in self._fmt_to_decode_func.keys():
             return self._fmt_to_decode_func[fmt]
         return None
@@ -247,6 +249,8 @@ class DeviceDecoder(BaseDecoder[T]):
         except UnicodeDecodeError:
             self._device_decoder_logger.warning(f'Сообщение от МК содержит невалидные ASCII байты: {message_bytes!r}')
             return
+
+        self._device_decoder_logger.debug(f'Получено сообщение {message}')
 
         if message in self._msg_to_handler.keys():
             coro_handler = self._msg_to_handler[message]

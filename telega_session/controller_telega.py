@@ -123,23 +123,29 @@ class ControllerTelega(Controller):
         self._measuring_pipeline_task = asyncio.create_task(self._measuring_pipeline())
         try:
             await self._measuring_pipeline_task
+            self._telega_controller_logger.debug("Пайплайн измерений завершён")
+
         except Exception as e:
             self._telega_controller_logger.exception(f"Ошибка пайплайне измерений: {e}")
 
     async def start_calibration(self) -> None:
         """ Запуск калибровки датчиков """
+        self._telega_controller_logger.debug('Запуск калибровки датчиков')
         await self._bus.start_calibration.emit()
 
     async def start_static_init(self) -> None:
         """ Запуск набора статического буфера """
+        self._telega_controller_logger.debug('Запуск набора статического')
         await self._bus.start_static_init.emit()
 
     async def start_measuring(self) -> None:
         """ Запуск измерений """
+        self._telega_controller_logger.debug('Запуск измерений')
         await self._bus.start_measuring.emit()
 
     async def stop_measuring(self) -> None:
         """ Остановка измерений """
+        self._telega_controller_logger.debug('Остановка измерений')
         await self._bus.stop_measuring.emit()
 
     # =============================================================
@@ -148,28 +154,35 @@ class ControllerTelega(Controller):
 
     async def _measuring_pipeline(self) -> None:
         """ Последовательный запуск всех этапов для сбора данных """
+        self._telega_controller_logger.debug("Запуск _measuring_pipeline")
+        
         try:
             # 1. Рукопожатие
             self._handshake_done_event.clear()
             await self._bus.handshake_init.emit()
             await self._handshake_done_event.wait()
+            self._telega_controller_logger.debug("Процедура рукопожатия выполнена")
 
             # 2. Запуск калибровки датчиков
             self._calibration_done_event.clear()
             await self.start_calibration()
             await self._calibration_done_event.wait()
+            self._telega_controller_logger.debug("Калибровка завершена")
 
             # 3. Запуск набора статического буфера
             self._static_init_done_event.clear()
             await self.start_static_init()
             await self._static_init_done_event.wait()
+            self._telega_controller_logger.debug("Набор статического буфера завершён")
 
             # 4. Запуск измерений
             await self._bus.start_measuring.emit()
+            self._telega_controller_logger.debug("Начало сбора данных")
             await asyncio.sleep(10)
 
             # 5. Завершение измерений
             await self._bus.stop_measuring.emit()
+            self._telega_controller_logger.debug("Сбор данных завершён")
 
         except asyncio.CancelledError:
             self._telega_controller_logger.debug(f'_measuring_pipeline остановлен!')

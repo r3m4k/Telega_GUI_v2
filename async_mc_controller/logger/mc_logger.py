@@ -220,6 +220,7 @@ class McLogger:
             logger = app_logger.get_logger('ComPort.Device')
             logger.error('Устройство не отвечает!')
         """
+        return logging.getLogger(f'{_ROOT_LOGGER_NAME}.{name}')
 
     def set_log_dir(self, log_dir: Path) -> None:
         """Изменяет директорию для хранения логов.

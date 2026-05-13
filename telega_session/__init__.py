@@ -12,8 +12,8 @@ __author__ = 'Roman Romanovskiy'
 # --------------------------------------------------------
 
 from telega_session.com_port_telega import ComPortTelega
-from controller_telega import ControllerTelega
-from decoder_telega import DecoderTelega
+from telega_session.controller_telega import ControllerTelega
+from telega_session.decoder_telega import DecoderTelega
 
 
 # --------------------------------------------------------
