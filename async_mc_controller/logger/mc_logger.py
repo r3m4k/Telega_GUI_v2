@@ -20,7 +20,7 @@ from typing import Optional
 import yappi
 
 # User imports
-from async_mc_controller.config import config
+from async_mc_controller.config import McConfig
 
 #############################################
 
@@ -42,40 +42,41 @@ class McLogger:
 
     Пример использования:
         # В каждом классе получаем дочерний логгер с явным именем
-        logger = app_logger.get_logger('App.ComPort')
+        logger = mc_logger.get_logger('App.ComPort')
         logger.debug('Подключение к порту...')
     """
 
-    def __init__(self):
+    def __init__(self, config: McConfig):
+        self._config: McConfig = config
+
         self._file_handler:    Optional[logging.Handler] = None
         self._console_handler: Optional[logging.Handler] = None
 
         # Создаём корневой логгер приложения
         self._logger = logging.getLogger(_ROOT_LOGGER_NAME)
-        self._logger.setLevel(config.logger_config.log_level)
+        self._logger.setLevel(self._config.logger_config.log_level)
 
         # Настраиваем обработчики согласно конфигурации
-        if config.logger_config.use_file:
-            self._setup_file_handler(config.logger_config.log_dir)
+        if self._config.logger_config.use_file:
+            self._setup_file_handler(self._config.logger_config.log_dir)
 
-        if config.logger_config.use_console:
+        if self._config.logger_config.use_console:
             self._setup_console_handler()
 
         # Запускаем yappi только в режиме DEBUG
         self._yappi_running: bool = False
-        if config.logger_config.log_level == logging.DEBUG:
+        if self._config.logger_config.log_level == logging.DEBUG:
             self._start_yappi()
 
     # =============================================================
     # =================== Настройка обработчиков ==================
     # =============================================================
 
-    @staticmethod
-    def _make_formatter() -> logging.Formatter:
+    def _make_formatter(self) -> logging.Formatter:
         """Создаёт форматтер из текущей конфигурации."""
         return logging.Formatter(
-            config.logger_config.log_format,
-            config.logger_config.date_format
+            self._config.logger_config.log_format,
+            self._config.logger_config.date_format
         )
 
     def _setup_file_handler(self, log_dir: Path) -> None:
@@ -89,7 +90,7 @@ class McLogger:
         """
         log_dir  = Path(log_dir).resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / config.logger_config.log_filename
+        log_file = log_dir / self._config.logger_config.log_filename
 
         # Сохраняем предыдущий лог как резервную копию
         try:
@@ -108,7 +109,7 @@ class McLogger:
             self._file_handler.close()
 
         self._file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-        self._file_handler.setLevel(config.logger_config.log_level)
+        self._file_handler.setLevel(self._config.logger_config.log_level)
         self._file_handler.setFormatter(self._make_formatter())
         self._logger.addHandler(self._file_handler)
 
@@ -121,7 +122,7 @@ class McLogger:
             self._console_handler.close()
 
         self._console_handler = logging.StreamHandler()
-        self._console_handler.setLevel(config.logger_config.log_level)
+        self._console_handler.setLevel(self._config.logger_config.log_level)
         self._console_handler.setFormatter(self._make_formatter())
         self._logger.addHandler(self._console_handler)
 
@@ -155,8 +156,8 @@ class McLogger:
         """
         yappi.stop()
 
-        log_dir       = Path(config.logger_config.log_dir).resolve()
-        yappi_logfile = log_dir / (config.logger_config.log_filename + '.yappi_stats.log')
+        log_dir       = Path(self._config.logger_config.log_dir).resolve()
+        yappi_logfile = log_dir / (self._config.logger_config.log_filename + '.yappi_stats.log')
 
         stats = yappi.get_func_stats()
 
@@ -229,7 +230,7 @@ class McLogger:
         Args:
             log_dir (Path): Новая директория для хранения логов.
         """
-        if config.logger_config.use_file:
+        if self._config.logger_config.use_file:
             self._setup_file_handler(log_dir)
 
     def set_log_level(self, level: int) -> None:

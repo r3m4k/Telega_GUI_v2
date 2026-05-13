@@ -7,7 +7,6 @@ from typing import Any, Optional
 
 # User imports
 from async_mc_controller.logger import McLogger
-from async_mc_controller.config import config
 from .signals import Signals
 from .signal_bus import SignalBus
 from .subscribers import (
@@ -55,8 +54,10 @@ class McBus:
         await bus.new_byte.emit(b'\\xff')
     """
 
+    # Используемая сигнальная шина
     _signal_bus: SignalBus = SignalBus()
 
+    # Используемый логгер
     _logger: Optional[logging.Logger] = None
 
     # Сигналы, эмиссия которых логируется на уровне DEBUG.
@@ -91,7 +92,7 @@ class McBus:
         через sys._getframe() — только при необходимости логирования.
         Используется всеми дескрипторами McBus вместо прямого вызова _signal_bus.emit.
         """
-        if signal in McBus._logged_signals and config.logger_config.log_level == logging.DEBUG:
+        if signal in McBus._logged_signals and McBus._logger.isEnabledFor(logging.DEBUG):
             frame  = sys._getframe(2)   # 0=_emit, 1=дескриптор emit, 2=реальный вызывающий код
             caller = frame.f_locals.get('self', None)
             sender = type(caller).__name__ if caller else frame.f_code.co_name

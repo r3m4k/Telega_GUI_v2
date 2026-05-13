@@ -1,10 +1,10 @@
 # System imports
-from typing import Optional, TypeVar
+from typing import Optional, TypeVar, Generic
 
 # External imports
 
 # User imports
-from async_mc_controller.config import config
+from async_mc_controller.config import McConfig
 from async_mc_controller.utils import confirm_from_console
 from async_mc_controller.logger import LoggerProtocol, FooLogger
 from async_mc_controller.byte_source.bytes_source import AsyncBytesSource, AsyncBytesSourceFactory
@@ -14,12 +14,12 @@ from async_mc_controller.byte_source.com_port import AsyncComPort
 
 #########################
 
-T = TypeVar('T')    # Тип возвращаемого com_port (должен быть наследником AsyncComPort)
+T = TypeVar('T', bound=AsyncComPort)    # Тип возвращаемого com_port (должен быть наследником AsyncComPort)
 
 # ------------------------------------------
 
 
-class AsyncComPortSetting(AsyncBytesSourceFactory):
+class AsyncComPortSetting(AsyncBytesSourceFactory, Generic[T]):
     """Фабрика для настройки AsyncComPort через консоль.
 
     Настройка параметров (имя порта, скорость) собирается в `configure_source()`
@@ -27,26 +27,17 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
     источника выполняется в `get_bytes_source()`. Если `get_bytes_source()`
     вызван без предварительной настройки — `configure_source()` вызывается
     автоматически.
-
-    Пример использования:
-        setting = AsyncComPortSetting()
-        setting.configure_source()      # явный вызов
-        source = setting.get_bytes_source()
-
-        # или ленивая настройка:
-        source = AsyncComPortSetting().get_bytes_source()
-
-        async with source:
-            byte = await source.read_byte()
     """
 
-    def __init__(self, com_port_type: T = AsyncComPort, logger: LoggerProtocol = FooLogger):
+    def __init__(self, com_port_type: type[T], config: McConfig, logger: LoggerProtocol = FooLogger):
+
+        self._com_port_type: type[T] = com_port_type
+
         if not issubclass(com_port_type, AsyncComPort):
             raise TypeError(f"{type(com_port_type).__name__} не является наследником AsyncComPort")
 
-        self._com_port_type = com_port_type
+        self._config: McConfig = config
         self._logger = logger
-
         self._port_name: Optional[str] = None
         self._baudrate: Optional[int] = None
 
@@ -62,7 +53,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
         """
         self._try_use_cached_port()
 
-    def get_bytes_source(self) -> AsyncBytesSource:
+    def get_bytes_source(self, *args, **kwargs) -> T:
         """Создание AsyncComPort с выбранными настройками.
 
         Если источник не был настроен — вызывает `configure_source()`
@@ -77,18 +68,18 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
             self.configure_source()
 
         # Обновляем глобальный конфиг
-        port_info                = self._ports[self._port_name]
-        config.com_port.name     = self._port_name
-        config.com_port.desc     = port_info['desc']
-        config.com_port.hwid     = port_info['hwid']
-        config.com_port.baudrate = self._baudrate
+        port_info = self._ports[self._port_name]
+        self._config.com_port.name = self._port_name
+        self._config.com_port.desc = port_info['desc']
+        self._config.com_port.hwid = port_info['hwid']
+        self._config.com_port.baudrate = self._baudrate
 
         # Сохраняем изменения
-        config.save()
+        self._config.save()
 
-        self._logger.debug(f'Создан AsyncComPort типа {AsyncComPort.__name__}: '
+        self._logger.debug(f'Создан AsyncComPort типа {self._com_port_type.__name__}: '
                       f'{self._port_name} ({self._baudrate} бод)')
-        return self._com_port_type(self._port_name, self._baudrate, )
+        return self._com_port_type(self._port_name, self._baudrate, *args, **kwargs)
 
     def get_port_info(self):
         return self._port_name, self._baudrate
@@ -99,7 +90,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
         Если в конфиге есть валидные настройки и порт доступен —
         предлагает их использовать. Иначе запускает интерактивный выбор.
         """
-        com_port_config = config.com_port
+        com_port_config = self._config.com_port
 
         if com_port_config.name and com_port_config.baudrate and (com_port_config.name in self._ports):
 

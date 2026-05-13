@@ -3,8 +3,6 @@
 # External imports
 
 # User imports
-from async_mc_controller.logger import McLogger
-from async_mc_controller.signal_bus import McBus
 from async_mc_controller.byte_source import AsyncBytesSource
 from async_mc_controller.decoding import BaseDecoder
 from async_mc_controller.controller import Controller
@@ -37,15 +35,15 @@ class McSession:
     async def __aenter__(self) -> 'McSession':
         # Вызовем __aenter__ для декодера, com порта и контроллера
         await self.decoding.__aenter__()
-        await self.controller.__aenter__()
         await self.byte_source.__aenter__()
+        await self.controller.__aenter__()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         # Вызовем __aexit__ для декодера, com порта и контроллера
         await self.byte_source.__aexit__(exc_type, exc_val, exc_tb)
-        await self.controller.__aexit__(exc_type, exc_val, exc_tb)
         await self.decoding.__aexit__(exc_type, exc_val, exc_tb)
+        await self.controller.__aexit__(exc_type, exc_val, exc_tb)
 
         return False
 

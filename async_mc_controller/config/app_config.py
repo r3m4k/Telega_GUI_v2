@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Модуль управления конфигурацией приложения.
+"""Модуль управления конфигурацией пакета async_mc_controller.
 
-Предоставляет модель `AppConfig` на основе Pydantic для загрузки, валидации
+Предоставляет модель `McConfig` на основе Pydantic для загрузки, валидации
 и сохранения настроек в JSON-файл. Структура конфигурации включает секции
-для COM-порта и файлового источника, а также общие параметры.
+для COM-порта, а также общие параметры.
 """
 
 # System imports
@@ -16,20 +16,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # User imports
 from async_mc_controller.config.com_port_config import ComPortConfig
-from async_mc_controller.config.file_source_config import FileSourceConfig
 from async_mc_controller.config.logger_config import LoggerConfig
 
 #############################################
 
-class AppConfig(BaseModel):
-    """Основная конфигурация приложения.
+class McConfig(BaseModel):
+    """Основная конфигурация пакета async_mc_controller.
 
     Содержит настройки источников данных и общие параметры.
     Неизвестные поля в JSON-файле запрещены.
 
     Attributes:
         com_port (ComPortConfig):       Настройки COM-порта.
-        file_source (FileSourceConfig): Настройки файлового источника.
         logger_config (LoggerConfig):   Настройки логгера.
         save_dir (Path):                Директория для сохранения результатов.
     """
@@ -37,7 +35,6 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     com_port: ComPortConfig = Field(default_factory=ComPortConfig, description="Настройки COM-порта")
-    file_source: FileSourceConfig = Field(default_factory=FileSourceConfig, description="Настройки файлового источника")
     logger_config: LoggerConfig = Field(default_factory=LoggerConfig, description="Настройки логгера")
 
     save_dir: Path = Field(default_factory=lambda: Path("./results"), description="Директория для сохранения результатов")
@@ -47,7 +44,7 @@ class AppConfig(BaseModel):
         self._config_path: Optional[Path] = None
 
     @classmethod
-    def load(cls, config_path: Path) -> 'AppConfig':
+    def load(cls, config_path: Path) -> 'McConfig':
         """Загружает конфигурацию из JSON-файла и запоминает путь.
 
         Если файл не существует, создаёт экземпляр со значениями по умолчанию,
@@ -57,7 +54,7 @@ class AppConfig(BaseModel):
             config_path (Path): Путь к JSON-файлу конфигурации.
 
         Returns:
-            AppConfig: Экземпляр конфигурации, связанный с указанным путём.
+            McConfig: Экземпляр конфигурации, связанный с указанным путём.
         """
         if config_path.exists():
             with open(config_path, 'r', encoding='utf-8') as f:

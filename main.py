@@ -1,47 +1,43 @@
 # System imports
 import asyncio
 from pprint import pformat
+import logging
 
 # External imports
 
 # User imports
-from async_mc_controller.logger import app_logger
-from async_mc_controller.signal_bus import bus
+from async_mc_controller.config import McConfig, config_path
+from async_mc_controller.logger import McLogger
+from async_mc_controller.signal_bus import McBus
 from async_mc_controller.byte_source.com_port import AsyncComPortSetting
-from async_mc_controller.decoding.imu_decoding import ImuDecoder
-from async_mc_controller.controller.controller import Controller
+from async_mc_controller.async_mc_session import McSession
+from telega_session import ComPortTelega, DecoderTelega, ControllerTelega
 
 #########################
 
-# Количество пакетов данных для сбора
-N = 5000
-
 async def main() -> None:
+    # Настроим конфигурацию
+    mc_config = McConfig.load(config_path)
+    mc_config.logger_config.log_level = logging.DEBUG
+    mc_config.logger_config.log_filename = 'telega_mc_logger.log'
 
-    # app_logger.set_log_level(logging.DEBUG)
+    # Создадим необходимые экземпляры
+    mc_logger: McLogger = McLogger(mc_config)
+    bus = McBus(mc_logger)
 
-    # Инициализация источника данных
-    setting = AsyncComPortSetting()
-    setting.configure_source()              # сбор параметров: из кэша или через консоль
-    com_port = setting.get_bytes_source()   # подписывается на START/STOP_MEASURING
+    setting = AsyncComPortSetting(ComPortTelega, mc_config, mc_logger)
+    setting.configure_source()
+    com_port: ComPortTelega = setting.get_bytes_source(bus, mc_logger)
 
-    # Инициализация декодера
-    decoder = ImuDecoder()
+    decoder: DecoderTelega = DecoderTelega(bus, mc_logger)
 
-    # Инициализация контроллера
-    controller = Controller(               # подписывается на HANDSHAKE_FAILED, DEVICE_LOST
-        check_condition = lambda: decoder.data_len < N
-    )
-
-    app_logger.debug(f'Список подписчиков сигнальной шины:'
-                     f'{pformat(bus.get_subscribers())}')
+    controller: ControllerTelega = ControllerTelega(bus, mc_logger)
 
     # ------------------------------------------
     # Запуск
     # ------------------------------------------
-    async with com_port, decoder:
-        await controller.start_measuring()
-        await controller.stop_measuring()
+    async with McSession(decoder, com_port, controller):
+        await controller.run_measuring_pipeline()
 
     print(decoder)
 

@@ -63,7 +63,7 @@ class TelegaStatusCodeMessages:
 
 # ----------------------------------------------------------------
 
-class TelegaController(Controller):
+class ControllerTelega(Controller):
     def __init__(self, bus: McBus, mc_logger: McLogger):
         super().__init__(bus, mc_logger)
 
@@ -101,6 +101,8 @@ class TelegaController(Controller):
 
         self._bus.stop_calibration.unsubscribe(self)
         self._bus.stop_static_init.unsubscribe(self)
+        self._bus.interrupt_measuring.unsubscribe(self)
+
 
         await self._cancel_task(self._measuring_pipeline_task)
 
