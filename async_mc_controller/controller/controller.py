@@ -64,7 +64,7 @@ class Controller(ABC):
 
     @staticmethod
     async def _cancel_task(task: Optional[asyncio.Task]) -> None:
-        """Отменяет задачу и ожидает её завершения.
+        """Отмена задачи, ожидание её завершения и присвоение ей None.
 
         Args:
             task: Задача для отмены. Если None или завершена — ничего не делает.
@@ -75,6 +75,8 @@ class Controller(ABC):
                 await task
             except asyncio.CancelledError:
                 pass
+            finally:
+                task = None
 
     async def _checking_force_stop_flag(self) -> None:
         try:

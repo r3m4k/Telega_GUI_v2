@@ -15,7 +15,7 @@ def float_to_csv_format(value, digit_num: int = 8):
 # -------------------------------------------
 
 def confirm_from_console() -> bool:
-    chose = input(f'Введите 1 для подтверждения, 0 для отказа:\t')
+    chose = input(f'Введите 1 для подтверждения, 0 для отказа: ')
     print()
     if chose in ['1']:
         return True

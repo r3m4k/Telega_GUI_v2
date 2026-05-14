@@ -62,7 +62,6 @@ class AsyncComPortDevice(AsyncComPort):
         self._heartbeat_task: Optional[asyncio.Task] = None     # Задача heartbeat loop
         self._stop_flag: bool = False     # Флаг «остановка уже выполнена»
 
-
     # =============================================================
     # ======= Методы для работы в контекстном менеджере ===========
     # =============================================================
@@ -74,6 +73,7 @@ class AsyncComPortDevice(AsyncComPort):
         await super().__aenter__()
 
         # Самостоятельная подписка на сигналы шины
+        self._bus.stop_executing.subscribe(self)
         self._bus.handshake_init.subscribe(self)
         self._bus.handshake_done.subscribe(self)
         self._bus.heartbeat_ack.subscribe(self)
@@ -91,9 +91,9 @@ class AsyncComPortDevice(AsyncComPort):
         # Выставим флаг остановки и отменим _heartbeat_task
         self._stop_flag = True
         await self._cancel_task(self._heartbeat_task)
-        self._heartbeat_task = None
 
         # Отпишемся от событий шины
+        self._bus.stop_executing.unsubscribe(self)
         self._bus.handshake_init.unsubscribe(self)
         self._bus.handshake_done.unsubscribe(self)
         self._bus.heartbeat_ack.unsubscribe(self)
@@ -108,6 +108,15 @@ class AsyncComPortDevice(AsyncComPort):
     # =============================================================
     # =================== Обработчики сигналов ====================
     # =============================================================
+
+    async def on_stop_executing(self) -> None:
+        """Обработчик сигнала STOP_EXECUTING от контроллера.
+
+        Завершение задачи _heartbeat_task и выставление флага _stop_flag.
+        """
+        await self._cancel_task(self._heartbeat_task)
+        await self._cancel_task(self._reading_task)
+        self._stop_flag = True
 
     async def on_handshake_init(self) -> None:
         """Обработчик сигнала HANDSHAKE_INIT от контроллера.
@@ -195,7 +204,6 @@ class AsyncComPortDevice(AsyncComPort):
         self._stop_flag = True
         self._device_logger.warning(f'Аварийная остановка работы с портом {self._port_name}')
         await self._cancel_task(self._heartbeat_task)
-        self._heartbeat_task = None
         self._command_ack_event.set()
 
     # =============================================================
@@ -239,7 +247,7 @@ class AsyncComPortDevice(AsyncComPort):
 
     @staticmethod
     async def _cancel_task(task: Optional[asyncio.Task]) -> None:
-        """Отменяет задачу и ожидает её завершения.
+        """Отмена задачи, ожидание её завершения и присвоение ей None.
 
         Args:
             task: Задача для отмены. Если None или завершена — ничего не делает.
@@ -250,6 +258,8 @@ class AsyncComPortDevice(AsyncComPort):
                 await task
             except asyncio.CancelledError:
                 pass
+            finally:
+                task = None
 
     async def _send_command(self, command: bytes) -> None:
         """Отправка команды по COM-порту без ожидания подтверждения.

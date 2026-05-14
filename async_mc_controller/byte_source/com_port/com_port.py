@@ -62,7 +62,7 @@ class AsyncComPort(AsyncBytesSource):
                 секунд (зависание драйвера) или при ошибке последовательного
                 порта (неверное имя, занят другим процессом и т.п.).
         """
-        self._com_port_logger.info(f'Подключение к порту {self._port_name} ({self._baudrate} бод)')
+        self._com_port_logger.info(f'Подключение порта {self._port_name} ({self._baudrate} бод)')
 
         try:
             self._port_reader, self._port_writer = await asyncio.wait_for(
@@ -76,7 +76,7 @@ class AsyncComPort(AsyncBytesSource):
 
             # Запуск цикла чтения данных
             if self._reading_task is None or self._reading_task.done():
-                self._com_port_logger.debug(f'Запуск чтения из порта {self._port_name}')
+                self._com_port_logger.debug(f'Запуск чтения порта {self._port_name}')
                 self._reading_task = asyncio.create_task(self._reading_loop())
 
             return self
@@ -170,7 +170,7 @@ class AsyncComPort(AsyncBytesSource):
 
         Метод должен быть определён в наследнике!
         """
-        pass
+        ...
 
     @abstractmethod
     async def read_error_callback(self, err: ComPortReadError) -> None:
@@ -178,4 +178,4 @@ class AsyncComPort(AsyncBytesSource):
 
         Метод должен быть определён в наследнике!
         """
-        pass
+        ...

@@ -105,18 +105,23 @@ class ControllerTelega(Controller):
         self._bus.stop_static_init.unsubscribe(self)
         self._bus.interrupt_measuring.unsubscribe(self)
 
+        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из __aexit__')
         await self._cancel_task(self._measuring_pipeline_task)
 
         if self._telega_status_code == TelegaStatusCode.SUCCESS:
-            self._telega_controller_logger.debug(
-                f'\nКод завершения работы с устройством: {self._telega_status_code}\n'
+            self._telega_controller_logger.info(
+                f'Код завершения работы с устройством: {self._telega_status_code} '
                 f'// {self._telega_status_code_messages[self._telega_status_code]}'
             )
+            self._telega_controller_logger.info("Завершение работы через STOP_EXECUTING")
+            await self._bus.stop_executing.emit()
         else:
             self._telega_controller_logger.error(
-                f'\nКод завершения работы с устройством: {self._telega_status_code}\n'
+                f'Код завершения работы с устройством: {self._telega_status_code} '
                 f'// {self._telega_status_code_messages[self._telega_status_code]}'
             )
+            self._telega_controller_logger.info("Завершение работы через INTERRUPT_MEASURING")
+            await self._bus.interrupt_measuring.emit()
 
         return await super().__aexit__(exc_type, exc_val, exc_tb)
 
@@ -130,8 +135,6 @@ class ControllerTelega(Controller):
         try:
             await self._measuring_pipeline_task
             self._telega_controller_logger.debug("Пайплайн измерений завершён")
-            self._telega_controller_logger.info("Завершение чтения данных через INTERRUPT_MEASURING")
-            await self._bus.interrupt_measuring.emit()
 
         except Exception as e:
             self._telega_controller_logger.exception(f"Ошибка пайплайне измерений: {e}")
@@ -143,7 +146,7 @@ class ControllerTelega(Controller):
 
     async def start_static_init(self) -> None:
         """ Запуск набора статического буфера """
-        self._telega_controller_logger.debug('Запуск набора статического')
+        self._telega_controller_logger.debug('Запуск набора статического буфера')
         await self._bus.start_static_init.emit()
 
     async def start_measuring(self) -> None:
@@ -186,12 +189,12 @@ class ControllerTelega(Controller):
             self._telega_controller_logger.info("Набор статического буфера завершён")
 
             # 4. Запуск измерений
-            await self._bus.start_measuring.emit()
+            await self.start_measuring()
             self._telega_controller_logger.info("Начало сбора данных")
             await asyncio.sleep(10)
 
             # 5. Завершение измерений
-            await self._bus.stop_measuring.emit()
+            await self.stop_measuring()
             self._telega_controller_logger.info("Сбор данных завершён")
 
         except asyncio.CancelledError:
@@ -248,6 +251,7 @@ class ControllerTelega(Controller):
 
         Отмена _measuring_pipeline_task.
         """
+        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_interrupt_measuring')
         await self._cancel_task(self._measuring_pipeline_task)
 
     async def on_read_error(self, err: ReadError) -> None:
@@ -259,6 +263,7 @@ class ControllerTelega(Controller):
         Args:
             err (ReadError): Исключение, которое привело к остановке чтения.
         """
+        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_read_error')
         await self._cancel_task(self._measuring_pipeline_task)
         self._telega_status_code = TelegaStatusCode.READ_ERROR
         await super().on_read_error(err)
@@ -269,6 +274,7 @@ class ControllerTelega(Controller):
         Отменим self._measuring_pipeline_task, установим TelegaStatusCode.HANDSHAKE_ERROR
         и вызовем родительский обработчик сигнала.
         """
+        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_handshake_failed')
         await self._cancel_task(self._measuring_pipeline_task)
         self._telega_status_code = TelegaStatusCode.HANDSHAKE_ERROR
         await super().on_handshake_failed()
@@ -279,6 +285,7 @@ class ControllerTelega(Controller):
         Отменим self._measuring_pipeline_task, установим TelegaStatusCode.DEVICE_LOST
         и вызовем родительский обработчик сигнала.
         """
+        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_device_lost')
         await self._cancel_task(self._measuring_pipeline_task)
         self._telega_status_code = TelegaStatusCode.DEVICE_LOST
         await super().on_device_lost()
@@ -289,6 +296,7 @@ class ControllerTelega(Controller):
         Отменим self._measuring_pipeline_task, установим TelegaStatusCode.COMMAND_ACK_TIMEOUT
         и вызовем родительский обработчик сигнала.
         """
+        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_command_ack_timeout')
         await self._cancel_task(self._measuring_pipeline_task)
         self._telega_status_code = TelegaStatusCode.COMMAND_ACK_TIMEOUT
         await super().on_command_ack_timeout()
@@ -299,6 +307,7 @@ class ControllerTelega(Controller):
         Отменим self._measuring_pipeline_task, установим TelegaStatusCode.COMMAND_REJECTED
         и вызовем родительский обработчик сигнала.
         """
+        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_command_rejected')
         await self._cancel_task(self._measuring_pipeline_task)
         self._telega_status_code = TelegaStatusCode.COMMAND_REJECTED
         await super().on_command_rejected()

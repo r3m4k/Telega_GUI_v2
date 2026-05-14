@@ -135,6 +135,7 @@ class DecoderTelega(DeviceDecoder[TelegaData]):
                     f'{data.acc.x_coord}{sep}{data.acc.y_coord}{sep}{data.acc.z_coord}{sep}'
                     f'{data.gyro.x_coord}{sep}{data.gyro.y_coord}{sep}{data.gyro.z_coord}\n'
                 )
+
     # =============================================================
     # ================= Внутренняя логика =========================
     # =============================================================

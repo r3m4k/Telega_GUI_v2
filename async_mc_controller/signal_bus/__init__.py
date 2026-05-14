@@ -12,6 +12,7 @@ from .signal_bus import SignalBus, Subscriber
 from .subscribers import (
     NewByteSubscriber,
     PackageReadySubscriber,
+    StopExecutingSubscriber,
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
     StartCalibrationSubscriber,
@@ -47,6 +48,7 @@ __all__ = [
     # Протоколы подписчиков
     'NewByteSubscriber',
     'PackageReadySubscriber',
+    'StopExecutingSubscriber',
     'StartMeasuringSubscriber',
     'StopMeasuringSubscriber',
     'StartCalibrationSubscriber',

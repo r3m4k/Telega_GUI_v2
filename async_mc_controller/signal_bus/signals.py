@@ -25,6 +25,7 @@ class Signals(Enum):
     PACKAGE_READY = 'PackageReady'
 
     # Controller → ComPort
+    STOP_EXECUTING      = 'StopExecuting'
     START_MEASURING     = 'StartMeasuring'
     STOP_MEASURING      = 'StopMeasuring'
     START_CALIBRATION   = 'StartCalibration'

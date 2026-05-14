@@ -12,6 +12,7 @@ from .signal_bus import SignalBus
 from .subscribers import (
     NewByteSubscriber,
     PackageReadySubscriber,
+    StopExecutingSubscriber,
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
     StartCalibrationSubscriber,
@@ -63,6 +64,7 @@ class McBus:
     # Сигналы, эмиссия которых логируется на уровне DEBUG.
     # Высокочастотные сигналы (NEW_BYTE, PACKAGE_READY) намеренно исключены.
     _logged_signals: set[Signals] = {
+        Signals.STOP_EXECUTING,
         Signals.START_MEASURING,
         Signals.STOP_MEASURING,
         Signals.START_CALIBRATION,
@@ -139,6 +141,21 @@ class McBus:
     # =============================================================
     # =================== Управление измерением ===================
     # =============================================================
+
+    class StopExecutingSignal:
+        """Эмиттится контроллером для штатного завершения работы"""
+
+        @staticmethod
+        def subscribe(subscriber: StopExecutingSubscriber) -> None:
+            McBus._signal_bus.subscribe(Signals.STOP_EXECUTING, subscriber.on_stop_executing)
+
+        @staticmethod
+        def unsubscribe(subscriber: StopExecutingSubscriber) -> None:
+            McBus._signal_bus.unsubscribe(Signals.STOP_EXECUTING, subscriber.on_stop_executing)
+
+        @staticmethod
+        async def emit() -> None:
+            await McBus._emit(Signals.STOP_EXECUTING)
 
     class StartMeasuringSignal:
         """Эмиттится контроллером для запуска чтения."""
@@ -494,6 +511,7 @@ class McBus:
         self.package_ready = McBus.PackageReadySignal()
 
         # Управление измерением
+        self.stop_executing = McBus.StopExecutingSignal()
         self.start_measuring = McBus.StartMeasuringSignal()
         self.stop_measuring = McBus.StopMeasuringSignal()
         self.interrupt_measuring = McBus.InterruptMeasuringSignal()

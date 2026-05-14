@@ -29,15 +29,22 @@ class ComPortTelega(AsyncComPortDevice):
 
         self._telega_mc_logger = mc_logger.get_child_logger("ComPort.Device.Telega")
 
+    # =============================================================
+    # ======= Методы для работы в контекстном менеджере ===========
+    # =============================================================
+
+    async def __aenter__(self) -> 'ComPortTelega':
+        await super().__aenter__()
+
         # Подпишемся на нужные сигналы
         self._bus.stop_measuring.subscribe(self)
         self._bus.start_measuring.subscribe(self)
         self._bus.start_calibration.subscribe(self)
         self._bus.start_static_init.subscribe(self)
 
+        return self
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        # Перед выходом из контекстного менеджера отправим команду _set_foo_stage_command
-        await self._send_command_with_ack(self._set_foo_stage_command)
 
         # Отпишемся от событий шины
         self._bus.stop_measuring.unsubscribe(self)
@@ -48,6 +55,22 @@ class ComPortTelega(AsyncComPortDevice):
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
         return False
+
+    # =============================================================
+    # =================== Обработчики сигналов ====================
+    # =============================================================
+
+    async def on_stop_executing(self) -> None:
+        self._telega_mc_logger.info(f'Завершение работы с {self._port_name}')
+        if self._stop_flag:
+            self._telega_mc_logger.debug(
+                f'STOP_EXECUTING для порта {self._port_name} проигнорирован: '
+                f'завершение работы уже выполнено'
+            )
+            return
+
+        await self._send_command_with_ack(self._set_foo_stage_command)
+        await super().on_stop_executing()
 
     async def on_stop_measuring(self) -> None:
         self._telega_mc_logger.debug('Остановка чтения данных')

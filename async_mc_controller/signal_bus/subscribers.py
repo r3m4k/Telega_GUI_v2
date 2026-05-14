@@ -59,6 +59,21 @@ class PackageReadySubscriber(Protocol):
 
 # ------------------------------------------
 
+class StopExecutingSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.STOP_EXECUTING.
+
+    Любой объект, реализующий метод on_stop_executing, может быть
+    передан в McBus.stop_executing.subscribe().
+
+    Пример реализации:
+        class AsyncComPort:
+            async def on_stop_executing(self) -> None:
+                self._close_com_port()
+    """
+    async def on_stop_executing(self) -> None: ...
+
+# ------------------------------------------
+
 class StartMeasuringSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.START_MEASURING.
 

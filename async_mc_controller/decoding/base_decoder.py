@@ -71,7 +71,7 @@ class BaseDecoder(ABC, Generic[T]):
     def __init__(self, logger: LoggerProtocol = FooLogger):
 
         if self._header is None:
-            raise RuntimeError('Задайте заголовок посылке в наследнике BaseDecoder!')
+            raise RuntimeError('Определите заголовок посылки в наследнике BaseDecoder!')
 
         self._base_decoder_logger: LoggerProtocol = logger  # Сохраним логгер
 
