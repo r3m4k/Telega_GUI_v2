@@ -13,7 +13,7 @@ __author__ = 'Roman Romanovskiy'
 
 from telega_session.com_port_telega import ComPortTelega
 from telega_session.controller_telega import ControllerTelega
-from telega_session.decoder_telega import DecoderTelega
+from telega_session.decoder_telega import DecoderTelega, TelegaData
 
 
 # --------------------------------------------------------
@@ -22,6 +22,7 @@ __all__ = [
     'ComPortTelega',
     'ControllerTelega',
     'DecoderTelega',
+    'TelegaData'
 ]
 
 # --------------------------------------------------------

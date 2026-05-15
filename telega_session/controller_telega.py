@@ -93,6 +93,7 @@ class ControllerTelega(Controller):
         # Словарь для соответствия полученного сообщения и метода отработки.
         self._command_to_handler: dict[str, Callable[[], Awaitable[None]]] = {
             "STOP_RUNNING": self._stop_running,
+            "HANDSHAKE_INIT": self._handshake_init,
             "START_CALIBRATION": self._start_calibration,
             "START_STATIC_INIT": self._start_static_init,
             "START_MEASURING": self._start_measuring,
@@ -179,6 +180,11 @@ class ControllerTelega(Controller):
         """ Завершение работы контроллера """
         self._telega_controller_logger.debug('Завершение работы контроллера')
         self._stop_event.set()
+
+    async def _handshake_init(self) -> None:
+        """ Инициирование процедуры рукопожатия """
+        self._telega_controller_logger.debug('Инициирование процедуры рукопожатия')
+        await self._bus.handshake_init.emit()
 
     async def _start_calibration(self) -> None:
         """ Запуск калибровки датчиков """
