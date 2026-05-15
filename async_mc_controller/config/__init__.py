@@ -20,7 +20,7 @@ __author__ = 'Roman Romanovskiy'
 # --------------------------------------------------------
 
 from pathlib import Path
-from async_mc_controller.config.app_config import McConfig
+from async_mc_controller.config.mc_config import McConfig
 
 # Определяем путь к файлу конфигурации
 config_path = Path(__file__).parent / "settings.json"

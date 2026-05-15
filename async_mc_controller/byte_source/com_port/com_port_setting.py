@@ -1,5 +1,5 @@
 # System imports
-from typing import Optional, TypeVar, Generic
+from typing import Optional, TypeVar, Generic, NamedTuple
 
 # External imports
 
@@ -18,6 +18,11 @@ T = TypeVar('T', bound=AsyncComPort)    # Тип возвращаемого com_
 
 # ------------------------------------------
 
+class ComPortInfo(NamedTuple):
+    name: str
+    baudrate: int
+
+# ------------------------------------------
 
 class AsyncComPortSetting(AsyncBytesSourceFactory, Generic[T]):
     """Фабрика для настройки AsyncComPort через консоль.
@@ -29,7 +34,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory, Generic[T]):
     автоматически.
     """
 
-    def __init__(self, com_port_type: type[T], config: McConfig, logger: LoggerProtocol = FooLogger):
+    def __init__(self, com_port_type: type[T], config: McConfig, logger: LoggerProtocol = FooLogger()):
 
         self._com_port_type: type[T] = com_port_type
 
@@ -81,8 +86,8 @@ class AsyncComPortSetting(AsyncBytesSourceFactory, Generic[T]):
                       f'{self._port_name} ({self._baudrate} бод)')
         return self._com_port_type(self._port_name, self._baudrate, *args, **kwargs)
 
-    def get_port_info(self):
-        return self._port_name, self._baudrate
+    def get_port_info(self) -> ComPortInfo:
+        return ComPortInfo(self._port_name, self._baudrate)
 
     def _try_use_cached_port(self) -> None:
         """Попытка использовать сохранённые в конфиге настройки порта.
@@ -164,7 +169,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory, Generic[T]):
         print(f'Выбран порт #{port_num}: {port_name}\n'
               f'Скорость работы порта: {port_baudrate}')
 
-        self._logger.debug(f'Выбран порт: {port_name} ({port_baudrate} бод)')
+        self._logger.debug('Выбран порт: {port_name} ({port_baudrate} бод)')
 
         self._port_name = port_name
         self._baudrate  = port_baudrate

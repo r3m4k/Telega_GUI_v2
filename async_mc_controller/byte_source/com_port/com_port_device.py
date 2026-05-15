@@ -91,6 +91,7 @@ class AsyncComPortDevice(AsyncComPort):
         # Выставим флаг остановки и отменим _heartbeat_task
         self._stop_flag = True
         await self._cancel_task(self._heartbeat_task)
+        self._heartbeat_task = None
 
         # Отпишемся от событий шины
         self._bus.stop_executing.unsubscribe(self)
@@ -115,7 +116,11 @@ class AsyncComPortDevice(AsyncComPort):
         Завершение задачи _heartbeat_task и выставление флага _stop_flag.
         """
         await self._cancel_task(self._heartbeat_task)
+        self._heartbeat_task = None
+
         await self._cancel_task(self._reading_task)
+        self._reading_task = None
+
         self._stop_flag = True
 
     async def on_handshake_init(self) -> None:
@@ -204,6 +209,8 @@ class AsyncComPortDevice(AsyncComPort):
         self._stop_flag = True
         self._device_logger.warning(f'Аварийная остановка работы с портом {self._port_name}')
         await self._cancel_task(self._heartbeat_task)
+        self._heartbeat_task = None
+
         self._command_ack_event.set()
 
     # =============================================================
@@ -258,8 +265,6 @@ class AsyncComPortDevice(AsyncComPort):
                 await task
             except asyncio.CancelledError:
                 pass
-            finally:
-                task = None
 
     async def _send_command(self, command: bytes) -> None:
         """Отправка команды по COM-порту без ожидания подтверждения.
