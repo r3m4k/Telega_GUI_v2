@@ -39,7 +39,7 @@ class Controller(ABC):
         self._bus.command_ack_timeout.subscribe(self)
         self._bus.command_rejected.subscribe(self)
 
-        self._checking_force_stop_flag_task = asyncio.create_task(self._checking_force_stop_flag())
+        # self._checking_force_stop_flag_task = asyncio.create_task(self._checking_force_stop_flag())
 
         return self
 
@@ -55,6 +55,7 @@ class Controller(ABC):
         self._bus.command_rejected.unsubscribe(self)
 
         await self._cancel_task(self._checking_force_stop_flag_task)
+        self._checking_force_stop_flag_task = None
 
         return False
 
@@ -75,8 +76,6 @@ class Controller(ABC):
                 await task
             except asyncio.CancelledError:
                 pass
-            finally:
-                task = None
 
     async def _checking_force_stop_flag(self) -> None:
         try:

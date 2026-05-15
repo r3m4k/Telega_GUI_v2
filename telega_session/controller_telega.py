@@ -1,8 +1,9 @@
 # System imports
 import asyncio
 import logging
-from typing import Any, Optional
 from enum import IntEnum
+from multiprocessing import Queue
+from typing import Callable, Awaitable, Optional
 
 # External imports
 
@@ -11,6 +12,7 @@ from async_mc_controller.signal_bus import McBus
 from async_mc_controller.logger import McLogger
 from async_mc_controller.byte_source.read_error import ReadError
 from async_mc_controller.controller import Controller
+from telega_session.decoder_telega import TelegaData
 
 #########################
 
@@ -64,49 +66,69 @@ class TelegaStatusCodeMessages:
 # ----------------------------------------------------------------
 
 class ControllerTelega(Controller):
-    def __init__(self, bus: McBus, mc_logger: McLogger):
+    def __init__(self, bus: McBus, mc_logger: McLogger,
+                 command_queue: Queue, response_queue: Queue, data_queue: Queue):
+
+        # Вызов родительского конструктора
         super().__init__(bus, mc_logger)
 
         # Используемый в TelegaController логгер
         self._telega_controller_logger: logging.Logger = mc_logger.get_child_logger("Controller.TelegaController")
 
-        # Необходимые события
-        self._handshake_done_event: asyncio.Event = asyncio.Event()     # Событие выполнения рукопожатия
-        self._calibration_done_event: asyncio.Event = asyncio.Event()   # Событие завершения калибровки
-        self._static_init_done_event: asyncio.Event = asyncio.Event()   # Событие завершения сбора статического буфера
-
-        # Таска для пайплайна сбора данных
-        self._measuring_pipeline_task: Optional[asyncio.Task] = None
+        # Событие завершения работы контроллера
+        self._stop_event: asyncio.Event = asyncio.Event()
 
         # Код завершения работы с МК и предопределённые текстовые сообщения
         self._telega_status_code: TelegaStatusCode = TelegaStatusCode.SUCCESS
         self._telega_status_code_messages = TelegaStatusCodeMessages()
+
+        # Сохраним переданные очереди для межпроцессорного взаимодействия
+        self._command_queue = command_queue
+        self._response_queue = response_queue
+        self._data_queue = data_queue
+
+        # Таска по чтению очереди команд от родительского процесса
+        self._reading_cmd_queue_task: Optional[asyncio.Task] = None
+
+        # Словарь для соответствия полученного сообщения и метода отработки.
+        self._command_to_handler: dict[str, Callable[[], Awaitable[None]]] = {
+            "STOP_RUNNING": self._stop_running,
+            "START_CALIBRATION": self._start_calibration,
+            "START_STATIC_INIT": self._start_static_init,
+            "START_MEASURING": self._start_measuring,
+            "STOP_MEASURING": self._stop_measuring,
+        }
 
     # =============================================================
     # ======= Методы для работы в контекстном менеджере ===========
     # =============================================================
 
     async def __aenter__(self) -> 'Controller':
-        """ Самостоятельная подписка на специфичные события шины """
+        """ Процедура входа в контекстный менеджера """
         await super().__aenter__()
 
+        # Самостоятельная подписка на специфичные события шины
         self._bus.handshake_done.subscribe(self)
         self._bus.stop_calibration.subscribe(self)
         self._bus.stop_static_init.subscribe(self)
         self._bus.interrupt_measuring.subscribe(self)
 
+        # Запустим задачу чтения входящих команд
+        self._reading_cmd_queue_task = asyncio.create_task(self._reading_command_queue())
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
-        """ Отписка от специфичных сигналов шины """
+        """ Процедура выхода из контекстного менеджера """
 
         self._bus.handshake_done.unsubscribe(self)
         self._bus.stop_calibration.unsubscribe(self)
         self._bus.stop_static_init.unsubscribe(self)
         self._bus.interrupt_measuring.unsubscribe(self)
 
-        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из __aexit__')
-        await self._cancel_task(self._measuring_pipeline_task)
+        # Отменим задачу чтения входящих команд
+        await self._cancel_task(self._reading_cmd_queue_task)
+        self._reading_cmd_queue_task = None
 
         if self._telega_status_code == TelegaStatusCode.SUCCESS:
             self._telega_controller_logger.info(
@@ -129,130 +151,134 @@ class ControllerTelega(Controller):
     # ===================== Публичные методы ======================
     # =============================================================
 
-    async def run_measuring_pipeline(self) -> None:
-        """ Запуск пайплайна по сбору данных """
-        self._measuring_pipeline_task = asyncio.create_task(self._measuring_pipeline())
-        try:
-            await self._measuring_pipeline_task
-            self._telega_controller_logger.debug("Пайплайн измерений завершён")
+    async def running(self) -> None:
+        """ Метод для начала и завершения работы с МК.
 
-        except Exception as e:
-            self._telega_controller_logger.exception(f"Ошибка пайплайне измерений: {e}")
+        Вызывается внутри контекстного менеджера и управляет
+        жизненным циклом программы.
 
-    async def start_calibration(self) -> None:
-        """ Запуск калибровки датчиков """
-        self._telega_controller_logger.debug('Запуск калибровки датчиков')
-        await self._bus.start_calibration.emit()
+        Пример использования:
+            async with McSession(decoder, com_port, controller):
+                await controller.running()
+            print(decoder)
+        """
+        self._stop_event.clear()
+        await self._stop_event.wait()
 
-    async def start_static_init(self) -> None:
-        """ Запуск набора статического буфера """
-        self._telega_controller_logger.debug('Запуск набора статического буфера')
-        await self._bus.start_static_init.emit()
-
-    async def start_measuring(self) -> None:
-        """ Запуск измерений """
-        self._telega_controller_logger.debug('Запуск измерений')
-        await self._bus.start_measuring.emit()
-
-    async def stop_measuring(self) -> None:
-        """ Остановка измерений """
-        self._telega_controller_logger.debug('Остановка измерений')
-        await self._bus.stop_measuring.emit()
+        # Процедура завершения работы перед выходом из контекстного менеджера
+        await self._send_info_msg(
+            f'Код завершения работы с устройством: {self._telega_status_code} '
+            f'// {self._telega_status_code_messages[self._telega_status_code]}'
+        )
 
     # =============================================================
     # =================== Внутренняя логика =======================
     # =============================================================
 
-    async def _measuring_pipeline(self) -> None:
-        """ Последовательный запуск всех этапов для сбора данных """
-        self._telega_controller_logger.info("Запуск _measuring_pipeline")
-        
+    async def _stop_running(self) -> None:
+        """ Завершение работы контроллера """
+        self._telega_controller_logger.debug('Завершение работы контроллера')
+        self._stop_event.set()
+
+    async def _start_calibration(self) -> None:
+        """ Запуск калибровки датчиков """
+        self._telega_controller_logger.debug('Запуск калибровки датчиков')
+        await self._bus.start_calibration.emit()
+
+    async def _start_static_init(self) -> None:
+        """ Запуск набора статического буфера """
+        self._telega_controller_logger.debug('Запуск набора статического буфера')
+        await self._bus.start_static_init.emit()
+
+    async def _start_measuring(self) -> None:
+        """ Запуск измерений """
+        self._telega_controller_logger.debug('Запуск измерений')
+        await self._bus.start_measuring.emit()
+
+    async def _stop_measuring(self) -> None:
+        """ Остановка измерений """
+        self._telega_controller_logger.debug('Остановка измерений')
+        await self._bus.stop_measuring.emit()
+
+    async def _reading_command_queue(self):
+        """Неблокирующее чтение данных из self._command_queue"""
+
+        # Блокирующее получение команды из self._command_queue
+        def get_input_command(command_queue: Queue[str]) -> str:
+            return command_queue.get()
+
         try:
-            # 1. Рукопожатие
-            self._handshake_done_event.clear()
-            await self._bus.handshake_init.emit()
-            await self._handshake_done_event.wait()
-            self._telega_controller_logger.info("Процедура рукопожатия выполнена")
+            while True:
+                cmd: str = await asyncio.to_thread(get_input_command, self._command_queue)
+                if cmd not in self._command_to_handler.keys():
+                    self._telega_controller_logger.warning(f'Получена неизвестная команда {cmd} из _command_queue!')
+                    continue
 
-            # 2. Запуск калибровки датчиков
-            self._telega_controller_logger.info("Начало калибровки")
-            self._calibration_done_event.clear()
-            await self.start_calibration()
-            await self._calibration_done_event.wait()
-            self._telega_controller_logger.info("Калибровка завершена")
-
-            # 3. Запуск набора статического буфера
-            self._telega_controller_logger.info("Начало набора статического буфера")
-            self._static_init_done_event.clear()
-            await self.start_static_init()
-            await self._static_init_done_event.wait()
-            self._telega_controller_logger.info("Набор статического буфера завершён")
-
-            # 4. Запуск измерений
-            await self.start_measuring()
-            self._telega_controller_logger.info("Начало сбора данных")
-            await asyncio.sleep(10)
-
-            # 5. Завершение измерений
-            await self.stop_measuring()
-            self._telega_controller_logger.info("Сбор данных завершён")
+                coro_handler = self._command_to_handler[cmd]
+                await coro_handler()
 
         except asyncio.CancelledError:
-            self._telega_controller_logger.info(f'_measuring_pipeline остановлен!')
-            raise
+            self._telega_controller_logger.debug('Таска _reading_command_queue отменена')
+
+    async def _send_package(self, data_package: TelegaData) -> None:
+        """ Оправка пакета data_package в data_queue """
+        try:
+            await asyncio.to_thread(self._data_queue.put, data_package)
+        except Exception as e:
+            self._telega_controller_logger.error(f"Не удалось отправить пакет в data_queue: {e}")
+
+    async def _send_info_msg(self, msg: str) -> None:
+        """ Отправка информационных сообщений в response_queue """
+        try:
+            await asyncio.to_thread(self._response_queue.put, msg)
+        except Exception as e:
+            self._telega_controller_logger.error(f"Не удалось отправить пакет в response_queue: {e}")
 
     # =============================================================
     # =================== Обработчики сигналов ====================
     # =============================================================
 
-    async def on_package_ready(self, data: Any) -> None:
-        """Обработчик сигнала PACKAGE_READY — выводит номер пакета в консоль.
+    async def on_package_ready(self, data_package: TelegaData) -> None:
+        """Обработчик сигнала PACKAGE_READY.
 
-        Печать через `\\r` без перевода строки — каждый следующий вывод
-        перезаписывает предыдущий.
-        Финальный `\\n` после остановки — ответственность вызывающего
-        кода.
+        Отправка полученного пакета в очередь data_queue
 
         Args:
-            data: Объект с атрибутом `package_num`.
+            data_package: Декодированный пакет данных
         """
-        try:
-            # print(f'\rПринят пакет #{data.package_num}', end='', flush=True)
-            # self._telega_controller_logger.info(f'Принят пакет #{data.package_num}')
-            ...
-        except AttributeError:
-            self._telega_controller_logger.error(
-                f"Полученный пакет данных типа {type(data)} не имеет поле package_num!"
-            )
+        await self._send_package(data_package)
 
     async def on_handshake_done(self) -> None:
         """Обработчик сигнала HANDSHAKE_DONE от декодера.
 
-        Устанавливает событие _handshake_done_event.
+        Отправка HANDSHAKE_DONE родительскому процессу
+        через response_queue.
         """
-        self._handshake_done_event.set()
+        await self._send_info_msg("HANDSHAKE_DONE")
 
     async def on_stop_calibration(self) -> None:
         """ Обработчик сигнала STOP_CALIBRATION от декодера.
 
-        Устанавливает событие _calibration_done_event.
+        Отправка STOP_CALIBRATION родительскому процессу
+        через response_queue.
         """
-        self._calibration_done_event.set()
+        await self._send_info_msg("STOP_CALIBRATION")
 
     async def on_stop_static_init(self) -> None:
         """ Обработчик сигнала STOP_STATIC_INIT от декодера.
 
-        Устанавливает событие _static_init_done_event.
+        Отправка STOP_STATIC_INIT родительскому процессу
+        через response_queue.
         """
-        self._static_init_done_event.set()
+        await self._send_info_msg("STOP_STATIC_INIT")
 
     async def on_interrupt_measuring(self) -> None:
-        """ Обработчик сигнала STOP_STATIC_INIT от декодера.
+        """ Обработчик сигнала INTERRUPT_MEASURING.
 
         Отмена _measuring_pipeline_task.
         """
-        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_interrupt_measuring')
-        await self._cancel_task(self._measuring_pipeline_task)
+        self._stop_event.set()
+        self._telega_status_code = TelegaStatusCode.UNKNOWN_ERROR
 
     async def on_read_error(self, err: ReadError) -> None:
         """Обработчик сигнала READ_ERROR.
@@ -263,51 +289,42 @@ class ControllerTelega(Controller):
         Args:
             err (ReadError): Исключение, которое привело к остановке чтения.
         """
-        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_read_error')
-        await self._cancel_task(self._measuring_pipeline_task)
+        self._stop_event.set()
+        self._telega_controller_logger.error(f'Получено исключение: {err}')
         self._telega_status_code = TelegaStatusCode.READ_ERROR
-        await super().on_read_error(err)
 
     async def on_handshake_failed(self) -> None:
         """Обработчик сигнала HANDSHAKE_FAILED.
 
-        Отменим self._measuring_pipeline_task, установим TelegaStatusCode.HANDSHAKE_ERROR
+        Установим TelegaStatusCode.HANDSHAKE_ERROR
         и вызовем родительский обработчик сигнала.
         """
-        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_handshake_failed')
-        await self._cancel_task(self._measuring_pipeline_task)
+        self._stop_event.set()
         self._telega_status_code = TelegaStatusCode.HANDSHAKE_ERROR
-        await super().on_handshake_failed()
 
     async def on_device_lost(self) -> None:
         """Обработчик сигнала DEVICE_LOST.
 
-        Отменим self._measuring_pipeline_task, установим TelegaStatusCode.DEVICE_LOST
+        Установим TelegaStatusCode.DEVICE_LOST
         и вызовем родительский обработчик сигнала.
         """
-        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_device_lost')
-        await self._cancel_task(self._measuring_pipeline_task)
+        self._stop_event.set()
         self._telega_status_code = TelegaStatusCode.DEVICE_LOST
-        await super().on_device_lost()
 
     async def on_command_ack_timeout(self) -> None:
         """Обработчик сигнала COMMAND_ACK_TIMEOUT.
 
-        Отменим self._measuring_pipeline_task, установим TelegaStatusCode.COMMAND_ACK_TIMEOUT
+        Установим TelegaStatusCode.COMMAND_ACK_TIMEOUT
         и вызовем родительский обработчик сигнала.
         """
-        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_command_ack_timeout')
-        await self._cancel_task(self._measuring_pipeline_task)
+        self._stop_event.set()
         self._telega_status_code = TelegaStatusCode.COMMAND_ACK_TIMEOUT
-        await super().on_command_ack_timeout()
 
     async def on_command_rejected(self) -> None:
         """Обработчик сигнала COMMAND_REJECTED.
 
-        Отменим self._measuring_pipeline_task, установим TelegaStatusCode.COMMAND_REJECTED
+        Установим TelegaStatusCode.COMMAND_REJECTED
         и вызовем родительский обработчик сигнала.
         """
-        self._telega_controller_logger.info('Отмена _measuring_pipeline_task из on_command_rejected')
-        await self._cancel_task(self._measuring_pipeline_task)
+        self._stop_event.set()
         self._telega_status_code = TelegaStatusCode.COMMAND_REJECTED
-        await super().on_command_rejected()

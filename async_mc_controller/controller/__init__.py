@@ -9,14 +9,11 @@ __author__ = 'Roman Romanovskiy'
 # --------------------------------------------------------
 
 from async_mc_controller.controller.controller import Controller
-# from async_mc_controller.controller.mp_controller import MpController
-
 
 # --------------------------------------------------------
 
 __all__ = [
     'Controller',
-
 ]
 
 # --------------------------------------------------------
