@@ -209,8 +209,10 @@ class ControllerTelega(Controller):
     async def _reading_command_queue(self):
         """Неблокирующее чтение данных из self._command_queue"""
 
+        self._telega_controller_logger.debug('Запуск _reading_command_queue')
+
         # Блокирующее получение команды из self._command_queue
-        def get_input_command(command_queue: Queue[str]) -> str:
+        def get_input_command(command_queue: Queue) -> str:
             return command_queue.get()
 
         try:
@@ -220,6 +222,7 @@ class ControllerTelega(Controller):
                     self._telega_controller_logger.warning(f'Получена неизвестная команда {cmd} из _command_queue!')
                     continue
 
+                self._telega_controller_logger.debug(f'Получена команда {cmd}')
                 coro_handler = self._command_to_handler[cmd]
                 await coro_handler()
 

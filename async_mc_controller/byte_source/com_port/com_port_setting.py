@@ -34,7 +34,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory, Generic[T]):
     автоматически.
     """
 
-    def __init__(self, com_port_type: type[T], config: McConfig, logger: LoggerProtocol = FooLogger):
+    def __init__(self, com_port_type: type[T], config: McConfig, logger: LoggerProtocol = FooLogger()):
 
         self._com_port_type: type[T] = com_port_type
 
@@ -169,7 +169,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory, Generic[T]):
         print(f'Выбран порт #{port_num}: {port_name}\n'
               f'Скорость работы порта: {port_baudrate}')
 
-        self._logger.debug(f'Выбран порт: {port_name} ({port_baudrate} бод)')
+        self._logger.debug('Выбран порт: {port_name} ({port_baudrate} бод)')
 
         self._port_name = port_name
         self._baudrate  = port_baudrate
