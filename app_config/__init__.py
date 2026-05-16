@@ -17,15 +17,18 @@ __author__ = 'Roman Romanovskiy'
 # --------------------------------------------------------
 
 from pathlib import Path
-from .app_config import AppConfig
+from .app_config import AppConfig, LoggerConfig, ComPortConfig
 
 # Определяем путь к файлу конфигурации
-_config_path = Path(__file__).parent / "settings.json"
+config_path = Path(__file__).parent / "settings.json"
 
 # --------------------------------------------------------
 
 __all__ = [
     'AppConfig',
+    'config_path',
+    'LoggerConfig',
+    'ComPortConfig'
 ]
 
 # --------------------------------------------------------
