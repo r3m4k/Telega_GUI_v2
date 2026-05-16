@@ -8,17 +8,16 @@
 
 # System imports
 from typing import Optional
+from pathlib import Path
 
 # External imports
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 # User imports
-from app_logger import app_logger
-from byte_source.com_port import ComPortHX711 as ComPort
-from byte_source.com_port import ComPortReadError
-from decoding import DecoderProtocol
-from decoding.hx711_decoding import HX711Decoder as Decoder
-from decoding.hx711_decoding import HX711Data as DataType
+from app_config import AppConfig
+from async_mc_controller.config import LoggerConfig, ComPortConfig
+from telega_session import start_telega_session
+from telega_session import TelegaData as PackageType
 
 ##########################################################
 
@@ -26,19 +25,19 @@ class ComPortReader(QObject):
     """Класс для управления фоновым чтением данных из COM-порта.
 
     Сигналы:
-        data_received(DataType): Испускается при получении нового пакета данных.
+        data_received(PackageType): Испускается при получении нового пакета данных.
         error_occurred(str): Испускается при возникновении ошибки чтения или декодирования.
         finished(): Испускается после полной остановки потока и очистки ресурсов.
     """
 
-    data_received = pyqtSignal(DataType)
+    data_received = pyqtSignal(PackageType)
     error_occurred = pyqtSignal(str)
     finished = pyqtSignal()
 
     # ------------------------------------------------------------------------------
 
     class _ComPortReaderWorker(QObject):
-        """Внутренний класс, выполняющий чтение порта.
+        """Внутренний класс, выполняющий низкоуровневое взаимодействие с МК.
 
         Сигналы:
             data_received(DataType): Пробрасывается наружу.
@@ -46,7 +45,7 @@ class ComPortReader(QObject):
             finished(): Испускается при завершении работы (всегда).
         """
 
-        data_received = pyqtSignal(DataType)
+        data_received = pyqtSignal(PackageType)
         error_occurred = pyqtSignal(str)
         finished = pyqtSignal()
 
@@ -101,58 +100,20 @@ class ComPortReader(QObject):
     def is_active(self):
         return self._worker is not None
 
-    def configure_port(self, port_name: str, baudrate: int) -> None:
-        """Сохраняет параметры порта для последующего использования.
+    def configure(self, com_port_name: str, bin_file: Path) -> None:
+        ...
 
-        Создаёт объект `ComPort` с указанными параметрами. Если чтение уже
-        запущено, порт нельзя изменить.
+    def start_calibration(self) -> None:
+        ...
 
-        Args:
-            port_name (str): Имя порта.
-            baudrate (int): Скорость работы порта.
+    def start_static_init(self) -> None:
+        ...
 
-        Raises:
-            ComPortReadError: Если чтение уже запущено.
-        """
-        if self._worker_thread is not None and self._worker_thread.isRunning():
-            raise ComPortReadError("Нельзя изменить порт во время чтения")
-        self._com_port = ComPort(port_name, baudrate, app_logger.info)
+    def start_measuring(self) -> None:
+        ...
 
-    def start_reading(self) -> None:
-        """Запускает фоновое чтение данных из порта.
-
-        Создаёт новый поток и воркер, перемещает воркер в поток, подключает сигналы и запускает поток.
-
-        Raises:
-            ComPortReadError: Если порт не был предварительно настроен через `configure_port`,
-                          или чтение порта уже запущено.
-        """
-        if self._com_port is None:
-            raise ComPortReadError('Перед запуском необходимо выполнить конфигурацию порта!')
-        if self._worker_thread and self._worker_thread.isRunning():
-            raise ComPortReadError('Чтение порта уже запущено в другом потоке!')
-
-        self._worker_thread = QThread()
-        self._worker = self._ComPortReaderWorker(self._com_port)
-        self._worker.moveToThread(self._worker_thread)
-
-        # Подключаем сигналы
-        self._worker_thread.started.connect(self._worker.run)
-        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
-        self._worker_thread.finished.connect(self._on_thread_finished)
-
-        self._worker.data_received.connect(self.data_received)
-        self._worker.error_occurred.connect(self.error_occurred)
-        self._worker.finished.connect(self._worker_thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-
-        # Запустим поток для чтения com порта
-        self._worker_thread.start()
-
-    def stop_reading(self) -> None:
-        """Остановка чтения порта."""
-        if self._worker is not None:
-            self._worker.stop()
+    def stop_measuring(self) -> None:
+        ...
 
     def _on_thread_finished(self) -> None:
         """Слот, вызываемый после завершения потока. Очищает ссылки и испускает сигнал."""

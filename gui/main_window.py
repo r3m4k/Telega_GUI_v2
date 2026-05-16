@@ -1,79 +1,321 @@
 # System imports
+import logging
 from pathlib import Path
 
 # External imports
+from abc import ABC, abstractmethod
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QMainWindow, QTextEdit, QToolButton,
     QPushButton, QApplication, QMessageBox,
-    QComboBox, QRadioButton, QLineEdit
+    QComboBox, QLineEdit
 )
 from PyQt5.uic import loadUi
+from PyQt5.QtGui import QIcon
 
 # User imports
-from config import config
-from app_logger import app_logger
-from gui.saving_path_settings import SavingPathSetting, InvalidPathError
-from gui.com_port_settings import ComPortSettings, ComPortSettingsError, RadioButtonsDict
-from gui.com_port_reader import ComPortReader, ComPortReadError
-from gui.plotting_widget import PlottingWidget
-from ADCAnalysis import TorqueCalculation, TorqueCalculationError
-from decoding.hx711_decoding import HX711Data
+from logger import AppLogger
+from app_config import AppConfig, config_path
+from gui.saving_path_settings import SavingParams, InvalidPathError, InvalidTemplateFilenameError
+from gui.com_port_settings import ComPortSettings, ComPortSettingsError
+from gui.com_port_reader import ComPortReader
+from gui.data_storage import DataStorage
 
 ##########################################################
 
+class ProgramStage(ABC):
+    """
+    Класс для описания логики отработки нажатия кнопок пользователем
+    при различных стадиях программы.
+    Реализует паттерн "Состояние" (State)
+    """
+    def __init__(self, main_window: 'MainWindow'):
+        self._main_window = main_window
+
+    @abstractmethod
+    def apply_settings(self) -> None:
+        """ Сохранение настроек com порта и параметров сохранения """
+        ...
+
+    @abstractmethod
+    def start_calibration(self) -> None:
+        """ Запуск калибровки датчиков """
+        ...
+
+    @abstractmethod
+    def start_static_init(self) -> None:
+        """ Запуск сбора статического буфера """
+        ...
+
+    @abstractmethod
+    def start_measuring(self) -> None:
+        """ Запуск сбора данных """
+        ...
+
+    @abstractmethod
+    def stop_measuring(self) -> None:
+        """ Завершение сбора данных """
+        ...
+
+# =============================================================
+
 class MainWindow(QMainWindow):
     _main_window_path: Path = Path(__file__).parent / "ui" / "main_window.ui"
+    _app_icon_path: Path = Path(__file__).parent / "ui" / "telega.png"
+    _logger: logging.Logger
+    _app_config: AppConfig
+
+    # =============================================================
+    # ===================== Внутренние классы =====================
+    # ============== для описания состояний программы =============
+    # =============================================================
+
+    class SettingStage(ProgramStage):
+        """ Ожидание настроек сохранения и параметров порта """
+
+        def apply_settings(self) -> None:
+            """ Сохранение настроек com порта и параметров сохранения """
+            try:
+                saving_path = self._main_window._saving_params.get_saving_path()
+                template_filename = self._main_window._saving_params.get_template_filename()
+                com_port_name = self._main_window._com_port_settings.get_port_name()
+
+                # Применим полученные параметры и заблокируем их изменение
+                self._main_window.apply_settings(saving_path, template_filename, com_port_name)
+                self._main_window._saving_params.lock_input()
+                self._main_window._com_port_settings.lock_input()
+                self._main_window._apply_settings_button.setEnabled(False)
+
+            except (InvalidPathError, InvalidTemplateFilenameError, ComPortSettingsError) as err:
+                QMessageBox.critical(self._main_window, 'Ошибка задания параметров!', f'{err}')
+
+        def start_calibration(self) -> None:
+            """ Запуск калибровки датчиков """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала калибровки',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_static_init(self) -> None:
+            """ Запуск сбора статического буфера """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала набора статического буфера',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_measuring(self) -> None:
+            """ Запуск сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def stop_measuring(self) -> None:
+            """ Завершение сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка завершения сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+    # -------------------------------------------------------------
+
+    class CalibrationState(ProgramStage):
+        """ Ожидание настроек сохранения и параметров порта """
+        def __init__(self, main_window: 'MainWindow'):
+            super().__init__(main_window)
+            self.calibration_start_flag: bool = False
+
+        def apply_settings(self) -> None:
+            """ Сохранение настроек com порта и параметров сохранения """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка изменения параметров сохранения',
+                                'Параметры сохранения и настройки com порта '
+                                'не могут быть изменены во время работы программы')
+
+        def start_calibration(self) -> None:
+            """ Запуск калибровки датчиков """
+            if not self.calibration_start_flag:
+                self._main_window._com_port_reader.start_calibration()
+                self.calibration_start_flag = True
+            else:
+                QMessageBox.warning(self._main_window,
+                                    'Ошибка начала калибровки',
+                                    'Калибровка датчиков уже запущена')
+
+        def start_static_init(self) -> None:
+            """ Запуск сбора статического буфера """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала набора статического буфера',
+                                'Необходимо провести калибровку датчиков!')
+
+        def start_measuring(self) -> None:
+            """ Запуск сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала сбора данных',
+                                'Необходимо провести калибровку датчиков!')
+
+        def stop_measuring(self) -> None:
+            """ Завершение сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка завершения сбора данных',
+                                'Необходимо провести калибровку датчиков!')
+
+    # -------------------------------------------------------------
+
+    class StaticInitState(ProgramStage):
+        """ Ожидание настроек сохранения и параметров порта """
+
+        def apply_settings(self) -> None:
+            """ Сохранение настроек com порта и параметров сохранения """
+            self._main_window.apply_settings()
+
+        def start_calibration(self) -> None:
+            """ Запуск калибровки датчиков """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала калибровки',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_static_init(self) -> None:
+            """ Запуск сбора статического буфера """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала набора статического буфера',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_measuring(self) -> None:
+            """ Запуск сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def stop_measuring(self) -> None:
+            """ Завершение сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка завершения сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+    # -------------------------------------------------------------
+
+    class ReadyForMeasurementState(ProgramStage):
+        """ Ожидание настроек сохранения и параметров порта """
+
+        def apply_settings(self) -> None:
+            """ Сохранение настроек com порта и параметров сохранения """
+            self._main_window.apply_settings()
+
+        def start_calibration(self) -> None:
+            """ Запуск калибровки датчиков """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала калибровки',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_static_init(self) -> None:
+            """ Запуск сбора статического буфера """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала набора статического буфера',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_measuring(self) -> None:
+            """ Запуск сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def stop_measuring(self) -> None:
+            """ Завершение сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка завершения сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+    # -------------------------------------------------------------
+
+    class MeasuringState(ProgramStage):
+        """ Ожидание настроек сохранения и параметров порта """
+
+        def apply_settings(self) -> None:
+            """ Сохранение настроек com порта и параметров сохранения """
+            self._main_window.apply_settings()
+
+        def start_calibration(self) -> None:
+            """ Запуск калибровки датчиков """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала калибровки',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_static_init(self) -> None:
+            """ Запуск сбора статического буфера """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала набора статического буфера',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def start_measuring(self) -> None:
+            """ Запуск сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка начала сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+        def stop_measuring(self) -> None:
+            """ Завершение сбора данных """
+            QMessageBox.warning(self._main_window,
+                                'Ошибка завершения сбора данных',
+                                'Для начала задайте настройки com порта и параметры сохранения')
+
+    # =============================================================
 
     def __init__(self):
         super().__init__(parent=None)
 
+        # Создадим конфигурацию приложения
+        self._app_config = AppConfig.load(config_path)
+
+        # Зададим логгер приложения
+        self._logger = AppLogger(self._app_config.logger_config).get_child_logger("MainWindow")
+
         # Загрузим разметку страницы
         loadUi(self._main_window_path, self)
 
-        # Зададим название окна и устанавливаем полноэкранный режим
-        self.setWindowTitle('Динамометрический стенд')
-        self.setWindowState(Qt.WindowState(Qt.WindowMaximized))
+        # Зададим название окна и иконку
+        self.setWindowTitle('Путеизмерительная тележка')
+        self.setWindowIcon(QIcon(str(self._app_icon_path)))
+
+        # Зададим стадии программы
+        self._setting_stage: MainWindow.SettingStage = self.SettingStage(self)
+        self._calibration_stage: MainWindow.CalibrationState = self.CalibrationState(self)
+        self._static_init : MainWindow.StaticInitState = self.StaticInitState(self)
+        self._ready_for_measuring_stage : MainWindow.ReadyForMeasurementState = self.ReadyForMeasurementState(self)
+        self._measuring_stage : MainWindow.MeasuringState = self.MeasuringState(self)
+
+        self._current_stage: ProgramStage = self._setting_stage
 
         # ------------------------------
-        self._start_button: QPushButton = self.findChild(QPushButton, "StartButton")
-        self._stop_button: QPushButton = self.findChild(QPushButton, "StopButton")
+        # Кнопка сохранения настроек com порта и параметров сохранения
+        self._apply_settings_button: QPushButton = self.findChild(QPushButton, "ApplySettingsButton")
+
+        # Кнопки управления измерениями
+        self._start_calibration_button: QPushButton = self.findChild(QPushButton, "StartCalibrationButton")
+        self._start_static_init_button: QPushButton = self.findChild(QPushButton, "StartStaticInitButton")
+        self._start_measuring_button: QPushButton = self.findChild(QPushButton, "StartMeasuringButton")
+        self._stop_measuring_button:  QPushButton = self.findChild(QPushButton, "StopMeasuringButton")
         # ------------------------------
         self._msg_text_edit: QTextEdit = self.findChild(QTextEdit, "MessagesTextEdit")
         # ------------------------------
-        self._saving_path_setting = SavingPathSetting(
+        self._saving_params = SavingParams(
+            app_config=self._app_config,
             saving_path_edit = self.findChild(QLineEdit, "SavingPathEdit"),
-            choose_saving_path_button = self.findChild(QToolButton, "ChooseSavingPathButton")
+            choose_saving_path_button = self.findChild(QToolButton, "ChooseSavingPathButton"),
+            template_filename_edit = self.findChild(QLineEdit, "TemplateFilenameEdit"),
+            template_info_button = self.findChild(QPushButton, "TemplateInfoButton")
         )
         # ------------------------------
         self._com_port_settings = ComPortSettings(
+            app_config=self._app_config,
             com_port_combo_box = self.findChild(QComboBox, "ComPortComboBox"),
             com_port_info_button = self.findChild(QPushButton, "ComPortInfoButton"),
-            update_com_ports_button = self.findChild(QPushButton, "UpdateComPortsButton"),
-            radio_buttons = RadioButtonsDict(
-                rb_921600 = self.findChild(QRadioButton, "RadioButton_921600"),
-                rb_460800 = self.findChild(QRadioButton, "RadioButton_460800"),
-                rb_230400 = self.findChild(QRadioButton, "RadioButton_230400"),
-                rb_115200 = self.findChild(QRadioButton, "RadioButton_115200"),
-                rb_57600  = self.findChild(QRadioButton, "RadioButton_57600"),
-                rb_9600   = self.findChild(QRadioButton, "RadioButton_9600"),
-            )
+            update_com_ports_button = self.findChild(QPushButton, "UpdateComPortsButton")
         )
         # ------------------------------
-        # TODO: реализовать параметрическое добавление виджетов для построения графиков
-        self._plotters: dict[int, PlottingWidget] = {
-            1: PlottingWidget(self.findChild(pg.PlotWidget, "PlotterSensor_1")),
-            2: PlottingWidget(self.findChild(pg.PlotWidget, "PlotterSensor_2"))
-        }
-        # ------------------------------
-
         self._com_port_reader: ComPortReader = ComPortReader()
-        self._torque_calculation: TorqueCalculation = TorqueCalculation()
-
+        # ------------------------------
+        self._data_storage = DataStorage()
         # ------------------------------
         # Настроим интерфейс
         if not self._check_UI():
-            app_logger.error("Неправильно настроен main_window!")
+            self._app_logger.error("Неправильно настроен main_window!")
             QMessageBox.critical(self, "Ошибка", "Неправильно настроен main_window")
             QApplication.quit()
             exit(10)
@@ -91,144 +333,51 @@ class MainWindow(QMainWindow):
     def _quit_app(self) -> None:
         """ Метод для завершения работы программы """
         if not self._com_port_reader.is_active:
-            app_logger.info('Корректное завершение работы приложения')
+            self._app_logger.info('Корректное завершение работы приложения')
         else:
-            app_logger.warning('Принудительное завершение приложения до полной остановки ComPortReader')
+            self._app_logger.warning('Принудительное завершение приложения до полной остановки ComPortReader')
         QApplication.quit()
 
     def _init_UI(self) -> None:
         # Подключим нажатие кнопок и другие сигналы к соответствующим функциям-обработчикам
-        self._start_button.clicked.connect(self._start_measuring)
-        self._stop_button.clicked.connect(self._stop_measuring)
+        self._start_calibration_button.clicked.connect(lambda: self._current_stage.start_calibration())
+        self._start_static_init_button.clicked.connect(lambda: self._current_stage.start_static_init())
+        self._start_measuring_button.clicked.connect(lambda: self._current_stage.start_measuring())
+        self._stop_measuring_button.clicked.connect(lambda: self._current_stage.stop_measuring())
 
-        self._com_port_reader.data_received.connect(self._data_received)
-        self._com_port_reader.finished.connect(self._finishing_reading_data)
+        self._com_port_reader.data_received.connect(lambda package: self._data_storage.add_package(package))
         self._com_port_reader.error_occurred.connect(self._error_handler)
 
-        # -------------------------------------------------------------
-        # Настройка виджетов для графического отображения данных АЦП
-        for sensor_id in config.calibration.sensor_id_list:
-            plotter = self._plotters[sensor_id]
-            plotter.configure(
-                title=f'Показания датчика #{sensor_id}',
-                x_label='Время (с)',
-                y_label='Крутящий момент (H * m)',
-                background='w',
-                pen=pg.mkPen(config.main_window_config.pen_params[sensor_id]),
-                symbol='o',
-                symbolSize=4
-            )
-        # -------------------------------------------------------------
-
     def _check_UI(self) -> bool:
-        return (isinstance(self._start_button, QPushButton) and
-                isinstance(self._stop_button, QPushButton) and
+        return (isinstance(self._start_measuring_button,    QPushButton) and
+                isinstance(self._stop_measuring_button,     QPushButton) and
+                isinstance(self._start_calibration_button,  QPushButton) and
+                isinstance(self._start_static_init_button,  QPushButton) and
+                isinstance(self._apply_settings_button,     QPushButton) and
                 isinstance(self._msg_text_edit, QTextEdit))
 
+    # =============================================================
+    # =================== Внутренняя логика =======================
+    # =============================================================
+
+    def apply_settings(self,
+                       saving_path: Path,
+                       template_filename: str,
+                       com_port_name: str) -> None:
+        ...
+
+    def change_settings(self) -> None:
+        ...
+
+    def _error_handler(self, error_info: str) -> None:
+        QMessageBox.critical(self, "Ошибка выполнения!", error_info)
+        self._com_port_settings.unlock_input()
+        self._saving_path_setting.unlock_input()
+        self._current_stage = self._setting_stage
 
     # =============================================================
     # =============== Методы для обработки сигналов ===============
     # =============================================================
 
-    def _start_measuring(self) -> None:
-        try:
-            # Получение пути сохранения
-            saving_path = self._saving_path_setting.get_saving_path()
-            app_logger.info(f'Выбранный путь сохранения: {saving_path}')
-
-            if any(saving_path.iterdir()):
-                app_logger.info('Выбрана непустая директория для сохранения результатов. Ожидается подтверждение пользователя...')
-                reply = QMessageBox.question(
-                    self,
-                    "Подтверждение",
-                    "Указанная директория не является пустой.\nФайлы с результатами могут быть перезаписаны.\nИспользовать указанный путь?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
-                )
-                if reply == QMessageBox.Yes:
-                    app_logger.info('Пользователь подтвердил использование непустой директории для сохранения результатов.')
-                elif reply == QMessageBox.No:
-                    app_logger.info('Пользователь отклонил использование непустой директории для сохранения результатов.')
-                    return
-
-            # Сконфигурируем порт
-            app_logger.debug('Получение данных порта и скорости его работы')
-            port_name = self._com_port_settings.get_port_name()
-            baudrate = self._com_port_settings.get_baudrate()
-            self._com_port_reader.configure_port(port_name, baudrate)
-
-            # Запустим чтение данных из порта
-            self._com_port_reader.start_reading()
-            app_logger.info(f'Начало сбора данных. Выбран порт {port_name}. Скорость работы порта - {baudrate}')
-            self._msg_text_edit.append(f'Начало сбора данных.\nВыбран порт {port_name}.\nСкорость работы порта - {baudrate}\n'
-                                       f'--------------------')
-
-            # Заблокируем изменение параметров запуска и сохраним конфиг
-            self._lock_input()
-            self._com_port_settings.save_config()
-            self._saving_path_setting.save_config()
-
-            # Отчистим графики
-            for plotter in self._plotters.values():
-                plotter.clear()
-
-        # Ошибка пути сохранения
-        except InvalidPathError as err:
-            app_logger.error(f'Вызвано исключение при получении директории для сохранения результатов работы:\n{err}')
-            QMessageBox.warning(self, 'Неверно указан путь сохранения', f'{err}')
-
-        # Ошибка конфигурации порта
-        except ComPortSettingsError as err:
-            app_logger.error(f'Вызвано исключение при настройке COM порта:\n{err}')
-            QMessageBox.warning(self, 'Ошибка конфигурации порта', f'{err}')
-
-        # Ошибка чтения порта
-        except ComPortReadError as err:
-            app_logger.error(f'Вызвано исключение при сборе данных:\n{err}')
-            QMessageBox.warning(self, 'Ошибка чтения порта', f'{err}')
-
-        # Неучтённое исключение
-        except Exception as err:
-            app_logger.exception('Получено неучтённое исключение!')
-            QMessageBox.critical(self, 'Неучтённое исключение!', f'{err}')
-
-    def _stop_measuring(self) -> None:
-        self._com_port_reader.stop_reading()
-
-    def _lock_input(self) -> None:
-        self._start_button.setEnabled(False)
-        self._com_port_settings.lock_input()
-        self._saving_path_setting.lock_input()
-
-    def _unlock_input(self) -> None:
-        self._start_button.setEnabled(True)
-        self._com_port_settings.unlock_input()
-        self._saving_path_setting.unlock_input()
-
-    def _error_handler(self, error_info: str) -> None:
-        QMessageBox.critical(self, "Ошибка выполнения!", error_info)
-
-    def _finishing_reading_data(self) -> None:
-        self._unlock_input()
-        app_logger.info('Завершение чтения данных')
-        self._msg_text_edit.append('Завершение чтения данных')
-        QMessageBox.information(self, "Уведомление", "Чтение данных завершено")
-
-    def _data_received(self, adc_data: HX711Data):
-        # TODO: сохранить полученный пакет данных в хранилище
-        # print(adc_data)
-        self._calc_torque(adc_data)
-
-    def _calc_torque(self, adc_data: HX711Data) -> None:
-        try:
-            torque = self._torque_calculation.calc_torque(sensor_id=adc_data.id,
-                                                          adc_value=(adc_data.adc_value * int(adc_data.gain)))
-            self._plot_received_data(adc_data.id, adc_data.time, torque)
-        except TorqueCalculationError:
-            self._msg_text_edit.append('Ошибка расчёта крутящего момента по данным АЦП')
-            app_logger.exception('Ошибка расчёта крутящего момента по данным АЦП')
-            self._stop_measuring()
-            QMessageBox.warning(self, 'Ошибка выполнения программы!', 'Ошибка расчёта крутящего момента по данным АЦП')
-
-    def _plot_received_data(self, plotter_id: int, x_value: float, y_value: float):
-        self._plotters[plotter_id].append_data(x_value, y_value)
+    def _handshake_failed(self) -> None:
+        ...
