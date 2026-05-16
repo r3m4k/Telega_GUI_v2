@@ -11,7 +11,7 @@ from time import sleep
 import numpy as np
 
 # User imports
-from async_mc_controller.config import McConfig
+from async_mc_controller.config import McConfig, ComPortConfig, LoggerConfig
 from async_mc_controller.logger import McLogger
 from async_mc_controller.signal_bus import McBus
 from async_mc_controller.byte_source.com_port import AsyncComPortSetting, ComPortInfo
@@ -20,12 +20,15 @@ from telega_session import ComPortTelega, DecoderTelega, TelegaData, ControllerT
 
 #########################
 
-async def run_telega_session(config: McConfig,
+async def run_telega_session(logger_config: LoggerConfig,
+                             com_port_config: ComPortConfig,
                              command_queue: Queue,
                              response_queue: Queue,
                              data_queue: Queue) -> None:
     # Настроим конфигурацию
-    mc_config = config
+    mc_config = McConfig()
+    mc_config.logger_config = logger_config
+    mc_config.com_port = com_port_config
     mc_config.logger_config.log_level = logging.DEBUG
     mc_config.logger_config.log_filename = 'telega_mc_logger.log'
     mc_config.logger_config.use_console = False
@@ -34,7 +37,7 @@ async def run_telega_session(config: McConfig,
     mc_logger: McLogger = McLogger(mc_config)
     bus = McBus(mc_logger)
 
-    com_port: ComPortTelega = ComPortTelega(config.com_port.name, config.com_port.baudrate,
+    com_port: ComPortTelega = ComPortTelega(mc_config.com_port.name, mc_config.com_port.baudrate,
                                             bus, mc_logger)
 
     decoder: DecoderTelega = DecoderTelega(bus, mc_logger)
@@ -62,14 +65,16 @@ async def run_telega_session(config: McConfig,
 
 # =============================================================
 
-def _start_telega_session(_config: McConfig,
+def _start_telega_session(_logger_config: LoggerConfig,
+                          _com_port_config: ComPortConfig,
                           _command_queue: Queue,
                           _response_queue: Queue,
                           _data_queue: Queue):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(run_telega_session(_config, _command_queue, _response_queue, _data_queue))
+        loop.run_until_complete(run_telega_session(_logger_config, _com_port_config,
+                                                   _command_queue, _response_queue, _data_queue))
     except Exception as err:
         print(err)
     finally:
@@ -83,12 +88,14 @@ def _start_telega_session(_config: McConfig,
 
 # =============================================================
 
-def run_in_subprocess(config: McConfig,
+def run_in_subprocess(logger_config: LoggerConfig,
+                      com_port_config: ComPortConfig,
                       command_queue: Queue,
                       response_queue: Queue,
                       data_queue: Queue) -> Process:
     p = Process(target=_start_telega_session,
-                args=(config, command_queue, response_queue, data_queue))
+                args=(logger_config, com_port_config, command_queue, response_queue, data_queue),
+                daemon=True)
     return p
 
 # =============================================================
@@ -187,8 +194,8 @@ class GuiProcess:
         self._config.com_port.name = self._com_port_info.name
         self._config.com_port.baudrate = self._com_port_info.baudrate
 
-        self._process = run_in_subprocess(self._config, self._command_queue,
-                                          self._response_queue, self._data_queue)
+        self._process = run_in_subprocess(self._config.logger_config, self._config.com_port,
+                                          self._command_queue, self._response_queue, self._data_queue)
 
         self._reading_thread = Thread(target=self._reading_queues)
 
